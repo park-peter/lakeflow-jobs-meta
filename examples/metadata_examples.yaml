@@ -4,15 +4,24 @@
 metadata_version: "1.0"
 
 modules:
-  # Example 1: SQL Query Task
+  # Example 1: SQL Query Task with Job-Level and Task-Level Settings
   - module_name: "data_quality_checks"
     description: "Simple data quality validation using inline SQL query (no table dependencies)"
+    job_config:
+      timeout_seconds: 7200
+      max_concurrent_runs: 1
+      queue:
+        enabled: true
+      continuous:
+        pause_status: UNPAUSED
+        task_retry_mode: ON_FAILURE
     sources:
       - source_id: "simple_quality_check"
         source_type: "sql"
         execution_order: 1
         transformation_config:
           task_type: "sql_query"
+          timeout_seconds: 3600  # Task-level timeout
           sql_task:
             sql_query: |
               SELECT 

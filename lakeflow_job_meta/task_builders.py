@@ -64,6 +64,10 @@ def create_task_from_config(
 
     if previous_order_tasks:
         task_config["depends_on"] = [{"task_key": task} for task in previous_order_tasks]
+    
+    # Add task-level timeout_seconds if specified in transformation_config
+    if "timeout_seconds" in trans_config:
+        task_config["timeout_seconds"] = trans_config["timeout_seconds"]
 
     return task_config
 
@@ -279,6 +283,9 @@ def convert_task_config_to_sdk_task(task_config: Dict[str, Any], cluster_id: Opt
     task_dependencies = None
     if "depends_on" in task_config:
         task_dependencies = [TaskDependency(task_key=dep["task_key"]) for dep in task_config["depends_on"]]
+    
+    # Get task-level timeout_seconds if specified, otherwise use default
+    task_timeout = task_config.get("timeout_seconds", TASK_TIMEOUT_SECONDS)
 
     if task_type == TASK_TYPE_NOTEBOOK:
         notebook_config = task_config["notebook_task"]
@@ -290,7 +297,7 @@ def convert_task_config_to_sdk_task(task_config: Dict[str, Any], cluster_id: Opt
             ),
             depends_on=task_dependencies,
             existing_cluster_id=cluster_id,
-            timeout_seconds=TASK_TIMEOUT_SECONDS,
+            timeout_seconds=task_timeout,
         )
 
     elif task_type == TASK_TYPE_SQL_QUERY:
@@ -313,7 +320,7 @@ def convert_task_config_to_sdk_task(task_config: Dict[str, Any], cluster_id: Opt
                 warehouse_id=sql_config["warehouse_id"], query=sql_query, parameters=sql_config.get("parameters", {})
             ),
             depends_on=task_dependencies,
-            timeout_seconds=TASK_TIMEOUT_SECONDS,
+            timeout_seconds=task_timeout,
         )
 
     elif task_type == TASK_TYPE_SQL_FILE:
@@ -344,7 +351,7 @@ def convert_task_config_to_sdk_task(task_config: Dict[str, Any], cluster_id: Opt
                 parameters=sql_config.get("parameters", {}),
             ),
             depends_on=task_dependencies,
-            timeout_seconds=TASK_TIMEOUT_SECONDS,
+            timeout_seconds=task_timeout,
         )
 
     else:

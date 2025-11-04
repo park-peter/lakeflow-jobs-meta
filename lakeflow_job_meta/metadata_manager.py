@@ -99,6 +99,12 @@ class MetadataManager:
         # Flatten YAML structure into DataFrame
         rows = []
         for module in config["modules"]:
+            module_name = module["module_name"]
+            job_config = module.get("job_config", {})
+            
+            # Store job_config in source_config of first source (as a workaround)
+            # This allows us to retrieve it later when creating jobs
+            first_source = True
             for source in module["sources"]:
                 # Handle transformation_config - ensure task_type is included
                 trans_config = source.get("transformation_config", {})
@@ -107,13 +113,21 @@ class MetadataManager:
                 if "notebook_path" in trans_config and "task_type" not in trans_config:
                     trans_config["task_type"] = "notebook"
 
+                source_config = source.get("source_config", {})
+                # Store job_config in first source's source_config
+                if first_source and job_config:
+                    if not isinstance(source_config, dict):
+                        source_config = {}
+                    source_config["_job_config"] = job_config
+                    first_source = False
+
                 rows.append(
                     {
                         "source_id": source["source_id"],
-                        "module_name": module["module_name"],
+                        "module_name": module_name,
                         "source_type": source.get("source_type", "unknown"),
                         "execution_order": source["execution_order"],
-                        "source_config": json.dumps(source.get("source_config", {})),
+                        "source_config": json.dumps(source_config),
                         "target_config": json.dumps(source.get("target_config", {})),
                         "transformation_config": json.dumps(trans_config),
                         "is_active": True,

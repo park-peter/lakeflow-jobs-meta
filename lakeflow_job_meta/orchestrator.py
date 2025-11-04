@@ -1,5 +1,6 @@
 """Main orchestration functions and classes for generating and managing Databricks jobs"""
 
+import json
 import logging
 from typing import Optional, List, Dict, Any
 from pyspark.sql import functions as F
@@ -8,7 +9,6 @@ from databricks.sdk import WorkspaceClient
 from databricks.sdk.service.jobs import JobSettings, SqlTaskQuery
 from delta.tables import DeltaTable
 
-from lakeflow_job_meta.constants import JOB_TIMEOUT_SECONDS, MAX_CONCURRENT_RUNS
 from lakeflow_job_meta.task_builders import (
     create_task_from_config,
     convert_task_config_to_sdk_task,
@@ -38,6 +38,30 @@ class JobSettingsWithDictTasks(JobSettings):
             result["max_concurrent_runs"] = self.max_concurrent_runs
         if self.timeout_seconds is not None:
             result["timeout_seconds"] = self.timeout_seconds
+        if hasattr(self, "queue") and self.queue is not None:
+            result["queue"] = (
+                self.queue
+                if isinstance(self.queue, dict)
+                else self.queue.as_dict() if hasattr(self.queue, "as_dict") else self.queue
+            )
+        if hasattr(self, "continuous") and self.continuous is not None:
+            result["continuous"] = (
+                self.continuous
+                if isinstance(self.continuous, dict)
+                else self.continuous.as_dict() if hasattr(self.continuous, "as_dict") else self.continuous
+            )
+        if hasattr(self, "trigger") and self.trigger is not None:
+            result["trigger"] = (
+                self.trigger
+                if isinstance(self.trigger, dict)
+                else self.trigger.as_dict() if hasattr(self.trigger, "as_dict") else self.trigger
+            )
+        if hasattr(self, "schedule") and self.schedule is not None:
+            result["schedule"] = (
+                self.schedule
+                if isinstance(self.schedule, dict)
+                else self.schedule.as_dict() if hasattr(self.schedule, "as_dict") else self.schedule
+            )
         return result
 
 
@@ -163,6 +187,85 @@ class JobOrchestrator:
         except Exception as e:
             logger.error(f"Could not store job_id: {str(e)}")
             raise RuntimeError(f"Failed to store job_id for module '{module_name}': {str(e)}") from e
+
+    def get_job_settings_for_module(self, module_name: str) -> Dict[str, Any]:
+        """Get job-level settings for a module from metadata.
+
+        Retrieves job_config stored in the first source's source_config (set when loading YAML).
+        Falls back to defaults if not found.
+
+        Args:
+            module_name: Name of the module
+
+        Returns:
+            Dictionary with job settings (timeout_seconds, max_concurrent_runs, queue, continuous, trigger, schedule)
+        """
+        from lakeflow_job_meta.constants import JOB_TIMEOUT_SECONDS, MAX_CONCURRENT_RUNS
+
+        spark = _get_spark()
+        try:
+            # Get first source to retrieve job_config
+            module_sources = (
+                spark.table(self.control_table)
+                .filter((F.col("module_name") == module_name) & (F.col("is_active") == True))
+                .orderBy("execution_order")
+                .limit(1)
+                .collect()
+            )
+
+            # Default settings
+            job_settings = {
+                "timeout_seconds": JOB_TIMEOUT_SECONDS,
+                "max_concurrent_runs": MAX_CONCURRENT_RUNS,
+                "queue": None,
+                "continuous": None,
+                "trigger": None,
+                "schedule": None,
+            }
+
+            # Check if job_config is stored in first source's source_config
+            if module_sources:
+                source_row = module_sources[0]
+                if hasattr(source_row, "asDict"):
+                    source = source_row.asDict()
+                else:
+                    source = dict(source_row)
+
+                source_config_str = source.get("source_config", "{}")
+                try:
+                    source_config = (
+                        json.loads(source_config_str) if isinstance(source_config_str, str) else source_config_str
+                    )
+                    job_config = source_config.get("_job_config", {})
+
+                    if job_config:
+                        if "timeout_seconds" in job_config:
+                            job_settings["timeout_seconds"] = job_config["timeout_seconds"]
+                        if "max_concurrent_runs" in job_config:
+                            job_settings["max_concurrent_runs"] = job_config["max_concurrent_runs"]
+                        if "queue" in job_config:
+                            job_settings["queue"] = job_config["queue"]
+                        if "continuous" in job_config:
+                            job_settings["continuous"] = job_config["continuous"]
+                        if "trigger" in job_config:
+                            job_settings["trigger"] = job_config["trigger"]
+                        if "schedule" in job_config:
+                            job_settings["schedule"] = job_config["schedule"]
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+            return job_settings
+
+        except Exception as e:
+            logger.warning(f"Could not retrieve job settings for module '{module_name}': {str(e)}. Using defaults.")
+            return {
+                "timeout_seconds": JOB_TIMEOUT_SECONDS,
+                "max_concurrent_runs": MAX_CONCURRENT_RUNS,
+                "queue": None,
+                "continuous": None,
+                "trigger": None,
+                "schedule": None,
+            }
 
     def generate_tasks_for_module(self, module_name: str) -> List[Dict[str, Any]]:
         """Generate task configurations for a module based on metadata.
@@ -304,15 +407,29 @@ class JobOrchestrator:
             task_dict = serialize_task_for_api(sdk_task)
             sdk_task_dicts.append(task_dict)
 
+        # Get job-level settings from metadata
+        job_settings_config = self.get_job_settings_for_module(module_name)
+
         # Try to update existing job first
         if stored_job_id:
             try:
                 job_settings = JobSettingsWithDictTasks(
                     name=job_name,
                     tasks=sdk_task_dicts,
-                    max_concurrent_runs=MAX_CONCURRENT_RUNS,
-                    timeout_seconds=JOB_TIMEOUT_SECONDS,
+                    max_concurrent_runs=job_settings_config["max_concurrent_runs"],
+                    timeout_seconds=job_settings_config["timeout_seconds"],
                 )
+
+                # Add queue, continuous, trigger, and schedule if specified
+                if job_settings_config.get("queue"):
+                    job_settings.queue = job_settings_config["queue"]
+                if job_settings_config.get("continuous"):
+                    job_settings.continuous = job_settings_config["continuous"]
+                if job_settings_config.get("trigger"):
+                    job_settings.trigger = job_settings_config["trigger"]
+                if job_settings_config.get("schedule"):
+                    job_settings.schedule = job_settings_config["schedule"]
+
                 self.workspace_client.jobs.update(
                     job_id=stored_job_id,
                     new_settings=job_settings,
@@ -341,12 +458,24 @@ class JobOrchestrator:
 
         # Create new job
         try:
-            created_job = self.workspace_client.jobs.create(
-                name=job_name,
-                tasks=sdk_task_objects,
-                max_concurrent_runs=MAX_CONCURRENT_RUNS,
-                timeout_seconds=JOB_TIMEOUT_SECONDS,
-            )
+            job_settings_kwargs = {
+                "name": job_name,
+                "tasks": sdk_task_objects,
+                "max_concurrent_runs": job_settings_config["max_concurrent_runs"],
+                "timeout_seconds": job_settings_config["timeout_seconds"],
+            }
+
+            # Add queue, continuous, trigger, and schedule if specified
+            if job_settings_config.get("queue"):
+                job_settings_kwargs["queue"] = job_settings_config["queue"]
+            if job_settings_config.get("continuous"):
+                job_settings_kwargs["continuous"] = job_settings_config["continuous"]
+            if job_settings_config.get("trigger"):
+                job_settings_kwargs["trigger"] = job_settings_config["trigger"]
+            if job_settings_config.get("schedule"):
+                job_settings_kwargs["schedule"] = job_settings_config["schedule"]
+
+            created_job = self.workspace_client.jobs.create(**job_settings_kwargs)
             created_job_id = created_job.job_id
             if not created_job_id:
                 raise RuntimeError(f"Job creation succeeded but no job_id returned: {created_job}")

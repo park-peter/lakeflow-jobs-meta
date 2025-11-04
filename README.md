@@ -247,18 +247,70 @@ SQL files should use parameter syntax (`:parameter_name`) for values passed via 
 
 ## Metadata Schema
 
-Each source in your YAML must have:
+Each module in your YAML must have:
 
 ```yaml
-- source_id: "unique_id"           # Required: Unique identifier
-  source_type: "sql"                # Required: Type of source
-  execution_order: 1                # Required: Execution order (for dependencies)
-  source_config: {}                  # Optional: Source-specific config (JSON)
-  target_config: {}                  # Optional: Target-specific config (JSON)
-  transformation_config:             # Required: Task configuration
-    task_type: "sql_query"           # Required: Type of task
-    # ... task-specific config
+modules:
+  - module_name: "my_pipeline"      # Required: Module name
+    description: "Pipeline description"  # Optional: Description
+    job_config:                      # Optional: Job-level settings
+      timeout_seconds: 7200          # Optional: Job timeout (default: 7200)
+      max_concurrent_runs: 2         # Optional: Max concurrent runs (default: 1)
+      queue:                         # Optional: Job queue settings
+        enabled: true
+      continuous:                    # Optional: Continuous job settings
+        pause_status: UNPAUSED
+        task_retry_mode: ON_FAILURE
+      trigger:                       # Optional: Job trigger (file_arrival, table_update, or periodic)
+        pause_status: UNPAUSED
+        file_arrival:
+          url: /Volumes/catalog/schema/folder/
+      # OR use schedule instead of trigger:
+      # schedule:                    # Optional: Scheduled job (cron)
+      #   quartz_cron_expression: "13 2 15 * * ?"
+      #   timezone_id: UTC
+      #   pause_status: UNPAUSED
+    sources:
+      - source_id: "unique_id"       # Required: Unique identifier
+        source_type: "sql"           # Required: Type of source
+        execution_order: 1           # Required: Execution order (for dependencies)
+        source_config: {}            # Optional: Source-specific config (JSON)
+        target_config: {}            # Optional: Target-specific config (JSON)
+        transformation_config:       # Required: Task configuration
+          task_type: "sql_query"      # Required: Type of task
+          timeout_seconds: 3600      # Optional: Task-level timeout (default: 3600)
+          # ... task-specific config
 ```
+
+### Job-Level Settings
+
+Job-level settings (`job_config`) control the behavior of the entire Databricks job:
+
+- `timeout_seconds`: Maximum time the job can run (default: 7200 seconds)
+- `max_concurrent_runs`: Maximum number of concurrent runs (default: 1)
+- `queue`: Job queue settings (`enabled: true/false`)
+- `continuous`: Continuous job settings
+  - `pause_status`: `UNPAUSED` or `PAUSED`
+  - `task_retry_mode`: `ON_FAILURE` or `NEVER`
+- `trigger`: Job trigger settings (file arrival, table update, or periodic)
+  - `pause_status`: `UNPAUSED` or `PAUSED`
+  - `file_arrival`: Trigger on file arrival
+    - `url`: Path to monitor (e.g., `/Volumes/catalog/schema/folder/`)
+  - `table_update`: Trigger on table updates
+    - `table_names`: List of table names to monitor (e.g., `["catalog.schema.table"]`)
+  - `periodic`: Periodic trigger
+    - `interval`: Interval number
+    - `unit`: Time unit (`DAYS`, `HOURS`, `MINUTES`, etc.)
+- `schedule`: Scheduled job using cron expression
+  - `quartz_cron_expression`: Cron expression (e.g., `"13 2 15 * * ?"`)
+  - `timezone_id`: Timezone (e.g., `"UTC"`)
+  - `pause_status`: `UNPAUSED` or `PAUSED`
+
+### Task-Level Settings
+
+Task-level settings in `transformation_config`:
+
+- `timeout_seconds`: Maximum time the task can run (default: 3600 seconds)
 
 ## Execution Order and Dependencies
 
