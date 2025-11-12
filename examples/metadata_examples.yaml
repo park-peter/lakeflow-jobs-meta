@@ -1,5 +1,11 @@
 # Example Metadata Configurations for Lakeflow Jobs Meta Framework
 # This file demonstrates different task types and use cases
+#
+# Job-Level Settings (optional):
+#   - edit_mode: "UI_LOCKED" (default) or "EDITABLE"
+#     Controls whether jobs can be edited in Databricks UI
+#     UI_LOCKED: Recommended for production (prevents accidental edits)
+#     EDITABLE: Allows UI editing (useful for experimental jobs)
 
 metadata_version: "1.0"
 
@@ -195,7 +201,20 @@ jobs:
         schema: "lakeflow_job_metadata"
         environment_key: "default_dbt"
 
-  # Example 9: Job with Environments
+  # Example 9: Job with Editable UI Mode
+  - job_name: "experimental_job"
+    description: "Experimental job that allows UI editing"
+    edit_mode: "EDITABLE"  # Allows editing in Databricks UI (not recommended for production)
+    max_concurrent_runs: 1
+    timeout_seconds: 3600
+    tasks:
+      - task_key: "experimental_task"
+        task_type: "notebook"
+        file_path: "/Workspace/Users/peter.park@databricks.com/lakeflow_jobs_meta/examples/notebook_task/sample_ingestion_notebook"
+        parameters:
+          mode: "test"
+
+  # Example 10: Job with Environments
   - job_name: "job_with_environments"
     description: "Job using Databricks environments"
     environments:

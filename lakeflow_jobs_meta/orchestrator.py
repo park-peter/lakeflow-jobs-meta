@@ -17,6 +17,7 @@ from databricks.sdk.service.jobs import (
     JobCluster,
     TaskNotificationSettings,
     JobEmailNotifications,
+    JobEditMode,
 )
 
 try:
@@ -777,11 +778,19 @@ class JobOrchestrator:
         # Try to update existing job first
         if stored_job_id:
             try:
+                # Get edit_mode from job config, default to UI_LOCKED
+                edit_mode_str = job_settings_config.get("edit_mode", "UI_LOCKED")
+                if isinstance(edit_mode_str, str):
+                    edit_mode = JobEditMode.UI_LOCKED if edit_mode_str == "UI_LOCKED" else JobEditMode.EDITABLE
+                else:
+                    edit_mode = JobEditMode.UI_LOCKED
+
                 job_settings = JobSettingsWithDictTasks(
                     name=f"[Lakeflow Jobs Meta] {job_name}",
                     tasks=sdk_task_dicts,
                     max_concurrent_runs=job_settings_config["max_concurrent_runs"],
                     timeout_seconds=job_settings_config["timeout_seconds"],
+                    edit_mode=edit_mode,
                 )
 
                 # Add queue, continuous, trigger, and schedule if specified
@@ -944,11 +953,19 @@ class JobOrchestrator:
 
         # Create new job
         try:
+            # Get edit_mode from job config, default to UI_LOCKED
+            edit_mode_str = job_settings_config.get("edit_mode", "UI_LOCKED")
+            if isinstance(edit_mode_str, str):
+                edit_mode = JobEditMode.UI_LOCKED if edit_mode_str == "UI_LOCKED" else JobEditMode.EDITABLE
+            else:
+                edit_mode = JobEditMode.UI_LOCKED
+
             job_settings_kwargs = {
                 "name": f"[Lakeflow Jobs Meta] {job_name}",
                 "tasks": sdk_task_objects,
                 "max_concurrent_runs": job_settings_config["max_concurrent_runs"],
                 "timeout_seconds": job_settings_config["timeout_seconds"],
+                "edit_mode": edit_mode,
             }
 
             if job_settings_config.get("queue"):

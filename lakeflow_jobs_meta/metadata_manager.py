@@ -186,6 +186,7 @@ class MetadataManager:
                 "schedule",
                 "job_clusters",
                 "notification_settings",
+                "edit_mode",
             ]
             job_config_dict = {}
             for key in job_level_keys:

@@ -300,6 +300,7 @@ When updating existing jobs, the framework **completely replaces** the job defin
 - ✅ Manual changes in Databricks UI are **overwritten**
 - ✅ Parameters, tags, or settings not in metadata are **removed**
 - ✅ Ensures consistency between metadata and deployed jobs
+- ✅ Jobs are created with `edit_mode: UI_LOCKED` to prevent accidental UI edits
 
 **Example:**
 ```yaml
@@ -315,9 +316,39 @@ If you manually added a `debug: "true"` parameter in the Databricks UI, running 
 1. Remove the `debug` parameter (not in metadata)
 2. Keep only `env` and `region` (defined in metadata)
 
+**UI Lock Protection:**
+
+By default, all jobs created by this framework are set with `edit_mode: UI_LOCKED`, which means:
+- ✅ Jobs **cannot be edited** in the Databricks UI (default)
+- ✅ Prevents accidental manual modifications
+- ✅ Enforces metadata as the single source of truth
+- ✅ Users can still view job details and run history
+- ✅ Changes must be made in YAML metadata
+
+**Override Edit Mode (Optional):**
+
+If you need to allow UI editing for specific jobs, you can set `edit_mode: EDITABLE` in your YAML:
+
+```yaml
+jobs:
+  - job_name: "experimental_job"
+    edit_mode: EDITABLE  # Allow UI editing for this job
+    tasks:
+      - task_key: "my_task"
+        # ...
+```
+
+**Note:** It's recommended to keep `edit_mode: UI_LOCKED` (default) for production jobs to maintain consistency.
+
+**In the Databricks UI, you'll see:**
+- The "Edit" button is disabled for managed jobs
+- A message indicating the job is managed by an external system
+- You can still trigger jobs manually using the "Run now" button
+
 **Best Practice:**
 - Always define all job settings in YAML metadata
-- Avoid manual changes in Databricks UI for managed jobs
+- All changes must go through the metadata workflow
+- Use version control (Git) to track metadata changes
 - Use metadata as the single source of truth
 
 ## Testing
