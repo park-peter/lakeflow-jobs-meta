@@ -248,33 +248,51 @@ jobs = jm.create_or_update_jobs(
 
 ### Pause Status Management
 
-The `default_pause_status` parameter controls the initial pause state of jobs with triggers or schedules:
+The `default_pause_status` parameter controls the initial behavior of **newly created jobs**:
 
 **`default_pause_status=False` (default behavior):**
-- Jobs with continuous/schedule/trigger are created in **active** (UNPAUSED) state
-- Jobs will execute according to their defined triggers/schedules
-- Manual (on-demand) jobs are not affected and must be triggered manually
+- **Manual jobs** (no schedule/trigger/continuous): **Auto-run immediately** after creation
+- **Jobs with schedule/trigger/continuous**: Created **active** (UNPAUSED), run according to schedule
 
 **`default_pause_status=True`:**
-- Jobs with continuous/schedule/trigger are created in **paused** (PAUSED) state
-- Jobs will NOT execute automatically until manually unpaused
-- Manual (on-demand) jobs are not affected and must be triggered manually
+- **Manual jobs**: Do **NOT** auto-run after creation
+- **Jobs with schedule/trigger/continuous**: Created **paused** (PAUSED), won't run until unpaused
 
 **Explicit `pause_status` in YAML always overrides the default:**
+
+The `pause_status` is set **within** the `continuous`, `schedule`, or `trigger` configuration:
+
 ```yaml
 jobs:
   - job_name: "scheduled_job"
     continuous:
       pause_status: UNPAUSED  # Explicit - overrides default_pause_status
+      task_retry_mode: ON_FAILURE
+    tasks:
+      - task_key: "my_task"
+        # ...
+  
+  - job_name: "cron_job"
+    schedule:
+      quartz_cron_expression: "0 0 2 * * ?"
+      timezone_id: "America/Los_Angeles"
+      pause_status: PAUSED  # Explicit - job won't run until unpaused
     tasks:
       - task_key: "my_task"
         # ...
 ```
 
-**Pause Status for Updates:**
-- For job updates, `default_pause_status` does NOT affect running jobs
+**Behavior:**
+- If `pause_status` is **explicitly set**: That value is used (for both create and update)
+- If `pause_status` is **NOT set**: 
+  - For **NEW jobs**: `default_pause_status` is applied
+  - For **UPDATES**: Existing pause status is unchanged
+
+**For Job Updates (Important!):**
+- `default_pause_status` has **NO effect** on job updates
+- Jobs are **never** auto-run when updating existing jobs
 - Pause status only changes if explicitly set in YAML metadata
-- This prevents accidentally pausing production jobs during updates
+- This prevents accidentally pausing or running production jobs during updates
 
 **Example:**
 ```python

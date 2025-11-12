@@ -215,26 +215,32 @@ def _apply_default_pause_status(
 ) -> Dict[str, Any]:
     """Apply default pause status to job settings with triggers/schedules.
 
+    Logic:
+    - If pause_status is explicitly set in continuous/schedule/trigger: Use that value (create & update)
+    - If pause_status is NOT set and is_update=False (creation): Apply default_pause_status
+    - If pause_status is NOT set and is_update=True (update): Don't modify (leave unchanged)
+
     Args:
         job_config: Job configuration dictionary
-        default_pause_status: Default pause status to apply
-        is_update: Whether this is an update operation (don't apply default if True)
+        default_pause_status: Default pause status to apply (only for creation)
+        is_update: Whether this is an update operation
 
     Returns:
         Modified job configuration
     """
     # For updates, only apply pause_status if explicitly set in metadata
+    # If not explicitly set, leave it alone (don't modify existing job's pause_status)
     if is_update:
         return job_config
 
-    # For creates, apply default_pause_status if not explicitly set
+    # For creates, apply default_pause_status if not explicitly set in the setting
     for setting_key in ["continuous", "schedule", "trigger"]:
         if setting_key in job_config:
             setting = job_config[setting_key]
             if isinstance(setting, dict) and "pause_status" not in setting:
-                # Apply default only if not explicitly set
-                if default_pause_status:
-                    setting["pause_status"] = "PAUSED"
+                # Apply default based on default_pause_status parameter
+                # True = PAUSED, False = UNPAUSED
+                setting["pause_status"] = "PAUSED" if default_pause_status else "UNPAUSED"
 
     return job_config
 
@@ -484,6 +490,7 @@ class JobOrchestrator:
             "environments": None,
             "notification_settings": None,
             "parameters": None,
+            "edit_mode": None,
         }
 
         if first_task:
@@ -521,6 +528,7 @@ class JobOrchestrator:
                             "trigger",
                             "schedule",
                             "parameters",
+                            "edit_mode",
                         ]
                     }
                 )
@@ -1145,6 +1153,31 @@ class JobOrchestrator:
 
             self._store_job_id(job_name, created_job_id)
 
+            # Auto-run newly created jobs if default_pause_status=False
+            # Only for jobs without schedule/trigger/continuous (manual/on-demand jobs)
+            if not default_pause_status:
+                has_schedule_or_trigger = (
+                    job_settings_config.get("schedule") is not None
+                    or job_settings_config.get("trigger") is not None
+                    or job_settings_config.get("continuous") is not None
+                )
+                if not has_schedule_or_trigger:
+                    try:
+                        run_result = self.workspace_client.jobs.run_now(job_id=created_job_id)
+                        logger.info(
+                            "Job '%s': Started initial job run (Job ID: %d, Run ID: %d)",
+                            job_name,
+                            created_job_id,
+                            run_result.run_id,
+                        )
+                    except Exception as run_error:
+                        logger.warning(
+                            "Job '%s': Failed to start initial job run (Job ID: %d): %s",
+                            job_name,
+                            created_job_id,
+                            str(run_error),
+                        )
+
             return created_job_id
 
         except Exception as e:
@@ -1159,11 +1192,15 @@ class JobOrchestrator:
         """Create and optionally run jobs.
 
         Args:
-            default_pause_status: Default pause state for jobs with triggers/schedules.
-                When False (default): Jobs are created active and run immediately.
-                When True: Jobs with continuous/schedule/trigger are created paused.
+            default_pause_status: Controls initial behavior for newly created jobs.
+                When False (default):
+                    - Manual jobs (no schedule/trigger/continuous): Auto-run immediately after creation
+                    - Jobs with schedule/trigger/continuous: Created active (UNPAUSED)
+                When True:
+                    - Manual jobs: Do NOT auto-run
+                    - Jobs with schedule/trigger/continuous: Created paused (PAUSED)
+                For job UPDATES: Has NO effect (never auto-runs on updates).
                 Can be overridden by explicit pause_status in YAML metadata.
-                For updates, only applies if pause_status is explicitly set in metadata.
             yaml_path: Optional path to load metadata from before orchestrating.
                 Can be:
                 - Path to a YAML file (e.g., "/Workspace/path/to/metadata.yaml")
