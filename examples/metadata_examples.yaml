@@ -189,6 +189,7 @@ jobs:
         project_directory: "/Workspace/Users/peter.park@databricks.com/dbt-project"
         catalog: "fe_ppark_demo"
         schema: "lakeflow_job_metadata"
+        environment_key: "default_dbt"
 
   # Example 9: Job with Environments
   - job_name: "job_with_environments"

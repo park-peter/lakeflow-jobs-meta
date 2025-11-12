@@ -149,13 +149,9 @@ class JobSettingsWithDictTasks(JobSettings):
                                 logger.debug("DEBUG: Attempting new_cluster.as_dict()")
                                 cluster_dict["new_cluster"] = cluster.new_cluster.as_dict()
                             except (AttributeError, TypeError) as e:
-                                logger.debug("DEBUG: new_cluster.as_dict() failed: %s, using as-is", str(e))
-                                if isinstance(cluster.new_cluster, dict):
-                                    cluster_dict["new_cluster"] = cluster.new_cluster
-                                else:
-                                    cluster_dict["new_cluster"] = cluster.new_cluster
+                                logger.debug("DEBUG: new_cluster.as_dict() failed: %s", str(e))
                         else:
-                            cluster_dict["new_cluster"] = cluster.new_cluster
+                            logger.debug("DEBUG: new_cluster has no as_dict method")
                     result["job_clusters"].append(cluster_dict)
                 elif hasattr(cluster, "as_dict"):
                     try:
@@ -802,7 +798,39 @@ class JobOrchestrator:
                             new_cluster_dict = cluster_dict.get("new_cluster", {})
                             if ClusterSpec and new_cluster_dict:
                                 try:
-                                    new_cluster_obj = ClusterSpec(**new_cluster_dict)
+                                    new_cluster_dict_copy = new_cluster_dict.copy()
+
+                                    aws_attrs_dict = new_cluster_dict_copy.pop("aws_attributes", None)
+                                    aws_attrs_obj = None
+                                    if AwsAttributes and aws_attrs_dict:
+                                        try:
+                                            aws_attrs_dict_copy = aws_attrs_dict.copy()
+                                            if "availability" in aws_attrs_dict_copy and AwsAvailability:
+                                                availability_str = aws_attrs_dict_copy["availability"]
+                                                if isinstance(availability_str, str):
+                                                    aws_attrs_dict_copy["availability"] = AwsAvailability(
+                                                        availability_str
+                                                    )
+                                            aws_attrs_obj = AwsAttributes(**aws_attrs_dict_copy)
+                                        except Exception:
+                                            pass
+
+                                    if aws_attrs_obj:
+                                        new_cluster_dict_copy["aws_attributes"] = aws_attrs_obj
+
+                                    if "data_security_mode" in new_cluster_dict_copy and DataSecurityMode:
+                                        data_security_str = new_cluster_dict_copy["data_security_mode"]
+                                        if isinstance(data_security_str, str):
+                                            new_cluster_dict_copy["data_security_mode"] = DataSecurityMode(
+                                                data_security_str
+                                            )
+
+                                    if "runtime_engine" in new_cluster_dict_copy and RuntimeEngine:
+                                        runtime_str = new_cluster_dict_copy["runtime_engine"]
+                                        if isinstance(runtime_str, str):
+                                            new_cluster_dict_copy["runtime_engine"] = RuntimeEngine(runtime_str)
+
+                                    new_cluster_obj = ClusterSpec(**new_cluster_dict_copy)
                                     job_clusters_list.append(
                                         JobCluster(
                                             job_cluster_key=cluster_dict["job_cluster_key"],
