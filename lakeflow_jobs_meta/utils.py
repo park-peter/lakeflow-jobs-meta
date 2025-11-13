@@ -13,15 +13,21 @@ def sanitize_task_key(task_key: str) -> str:
     Returns:
         Sanitized task key safe for use in Databricks job definitions
     """
-    # Replace invalid characters with underscores and ensure it starts with alphanumeric
-    sanitized = re.sub(r"[^a-zA-Z0-9_]", "_", str(task_key))
+    original = str(task_key)
+    # Check if original starts with non-alphanumeric and non-underscore
+    starts_with_invalid = original and not original[0].isalnum() and original[0] != "_"
+    
+    # Replace invalid characters with underscores
+    sanitized = re.sub(r"[^a-zA-Z0-9_]", "_", original)
     # Remove consecutive underscores
     sanitized = re.sub(r"_+", "_", sanitized)
     # Ensure it doesn't start or end with underscore
     sanitized = sanitized.strip("_")
-    # Ensure it starts with alphanumeric
-    if sanitized and not sanitized[0].isalnum():
+    
+    # If original started with invalid char (not underscore), prepend "task_"
+    if starts_with_invalid and sanitized:
         sanitized = "task_" + sanitized
+    
     return sanitized
 
 

@@ -10,48 +10,64 @@ from lakeflow_jobs_meta.orchestrator import JobOrchestrator
 from lakeflow_jobs_meta.metadata_manager import MetadataManager
 
 
+@patch("lakeflow_jobs_meta.orchestrator.WorkspaceClient")
 class TestJobOrchestrator:
     """Tests for JobOrchestrator class."""
 
-    def test_init_success(self):
+    def test_init_success(self, mock_workspace_client_class):
         """Test successful initialization."""
+        mock_client = MagicMock()
+        mock_workspace_client_class.return_value = mock_client
+
         orchestrator = JobOrchestrator(control_table="test_table")
 
         assert orchestrator.control_table == "test_table"
         assert orchestrator.jobs_table == "test_table_jobs"
-        assert isinstance(orchestrator.workspace_client, WorkspaceClient)
+        assert orchestrator.workspace_client == mock_client
         assert isinstance(orchestrator.metadata_manager, MetadataManager)
 
-    def test_init_with_custom_jobs_table(self):
+    def test_init_with_custom_jobs_table(self, mock_workspace_client_class):
         """Test initialization with custom jobs table name."""
+        mock_client = MagicMock()
+        mock_workspace_client_class.return_value = mock_client
+
         orchestrator = JobOrchestrator(control_table="test_table", jobs_table="custom_jobs_table")
 
         assert orchestrator.control_table == "test_table"
         assert orchestrator.jobs_table == "custom_jobs_table"
 
-    def test_init_with_default_control_table(self):
+    def test_init_with_default_control_table(self, mock_workspace_client_class):
         """Test initialization with default control table."""
+        mock_client = MagicMock()
+        mock_workspace_client_class.return_value = mock_client
+
         orchestrator = JobOrchestrator()
 
         assert orchestrator.control_table == "main.default.job_metadata_control_table"
         assert orchestrator.jobs_table == "main.default.job_metadata_control_table_jobs"
 
-    def test_init_invalid_jobs_table(self):
+    def test_init_invalid_jobs_table(self, mock_workspace_client_class):
         """Test error with invalid jobs_table name."""
+        mock_client = MagicMock()
+        mock_workspace_client_class.return_value = mock_client
+
         with pytest.raises(ValueError):
             JobOrchestrator(control_table="test_table", jobs_table="")
 
         with pytest.raises(ValueError):
-            JobOrchestrator(control_table="test_table", jobs_table=None)
+            JobOrchestrator(control_table="test_table", jobs_table="   ")
 
-    def test_init_custom_workspace_client(self, mock_workspace_client):
+    def test_init_custom_workspace_client(self, mock_workspace_client_class, mock_workspace_client):
         """Test initialization with custom WorkspaceClient."""
         orchestrator = JobOrchestrator(control_table="test_table", workspace_client=mock_workspace_client)
 
         assert orchestrator.workspace_client == mock_workspace_client
 
-    def test_init_invalid_control_table(self):
+    def test_init_invalid_control_table(self, mock_workspace_client_class):
         """Test error with invalid control_table name."""
+        mock_client = MagicMock()
+        mock_workspace_client_class.return_value = mock_client
+
         with pytest.raises(ValueError):
             JobOrchestrator(control_table="")
 
@@ -107,7 +123,7 @@ class TestJobOrchestrator:
         mock_get_spark.return_value = mock_spark_session
 
         mock_df = MagicMock()
-        mock_df.filter.return_value.select.return_value.limit.return_value.count.return_value = 0
+        mock_df.filter.return_value.select.return_value.limit.return_value.collect.return_value = []
         mock_spark_session.table.return_value = mock_df
 
         orchestrator = JobOrchestrator(control_table="test_table")
@@ -127,25 +143,29 @@ class TestJobOrchestrator:
         # Should return None on error
         assert result is None
 
-    @patch("lakeflow_jobs_meta.orchestrator.DeltaTable")
+    @patch("lakeflow_jobs_meta.orchestrator._get_current_user")
     @patch("lakeflow_jobs_meta.orchestrator._get_spark")
-    def test_store_job_id_success(self, mock_get_spark, mock_delta_table, mock_spark_session):
+    def test_store_job_id_success(self, mock_get_spark, mock_get_current_user, mock_spark_session):
         """Test successful storage of job ID."""
         mock_get_spark.return_value = mock_spark_session
-        mock_delta_instance = MagicMock()
-        mock_delta_table.forName.return_value = mock_delta_instance
+        mock_get_current_user.return_value = "test_user"
+        mock_spark_session.createDataFrame = MagicMock()
+        mock_spark_session.sql = MagicMock()
 
         orchestrator = JobOrchestrator(control_table="test_table")
         orchestrator._store_job_id("test_job", 12345)
 
-        mock_spark_session.sql.assert_called_once()
+        # Verify MERGE SQL was called
+        assert mock_spark_session.sql.called
 
-    @patch("lakeflow_jobs_meta.orchestrator.DeltaTable")
+    @patch("lakeflow_jobs_meta.orchestrator._get_current_user")
     @patch("lakeflow_jobs_meta.orchestrator._get_spark")
-    def test_store_job_id_error(self, mock_get_spark, mock_delta_table, mock_spark_session):
+    def test_store_job_id_error(self, mock_get_spark, mock_get_current_user, mock_spark_session):
         """Test error handling during storage."""
         mock_get_spark.return_value = mock_spark_session
-        mock_delta_table.forName.side_effect = Exception("Storage error")
+        mock_get_current_user.return_value = "test_user"
+        mock_spark_session.createDataFrame = MagicMock()
+        mock_spark_session.sql.side_effect = Exception("Storage error")
 
         orchestrator = JobOrchestrator(control_table="test_table")
 
@@ -158,13 +178,18 @@ class TestJobOrchestrator:
         """Test generating tasks for a job."""
         mock_get_spark.return_value = mock_spark_session
 
-        mock_task = MagicMock()
-        mock_task.__getitem__.side_effect = lambda key: {
+        # Mock task row with proper data
+        task_data = {
             "task_key": "task1",
-            "depends_on": "[]",
+            "depends_on": None,
             "job_name": "job1",
             "disabled": False,
-        }.get(key, None)
+            "task_type": "notebook",
+            "task_config": '{"file_path": "/test"}',
+        }
+        mock_task = MagicMock()
+        mock_task.asDict.return_value = task_data
+        mock_task.__getitem__.side_effect = lambda key: task_data.get(key)
 
         mock_df = MagicMock()
         mock_df.filter.return_value.collect.return_value = [mock_task]
@@ -184,7 +209,7 @@ class TestJobOrchestrator:
         mock_get_spark.return_value = mock_spark_session
 
         mock_df = MagicMock()
-        mock_df.filter.return_value.orderBy.return_value.collect.return_value = []
+        mock_df.filter.return_value.collect.return_value = []
         mock_spark_session.table.return_value = mock_df
 
         orchestrator = JobOrchestrator(control_table="test_table")
@@ -246,6 +271,8 @@ class TestJobOrchestrator:
         mock_workspace_client.jobs.create.assert_called_once()
         mock_store.assert_called_once_with("test_job", 12345)
 
+    @patch("lakeflow_jobs_meta.orchestrator._get_current_user")
+    @patch("lakeflow_jobs_meta.orchestrator._get_spark")
     @patch("lakeflow_jobs_meta.orchestrator.serialize_task_for_api")
     @patch("lakeflow_jobs_meta.orchestrator.JobOrchestrator.generate_tasks_for_job")
     @patch("lakeflow_jobs_meta.orchestrator.JobOrchestrator._get_stored_job_id")
@@ -258,9 +285,17 @@ class TestJobOrchestrator:
         mock_get_job_id,
         mock_generate_tasks,
         mock_serialize,
+        mock_get_spark,
+        mock_get_current_user,
         mock_workspace_client,
+        mock_spark_session,
     ):
         """Test updating an existing job."""
+        mock_get_spark.return_value = mock_spark_session
+        mock_get_current_user.return_value = "test_user"
+        mock_spark_session.createDataFrame = MagicMock()
+        mock_spark_session.sql = MagicMock()
+
         mock_get_job_id.return_value = 12345  # Existing job
         mock_get_settings.return_value = {
             "timeout_seconds": 7200,
@@ -270,18 +305,26 @@ class TestJobOrchestrator:
             "trigger": None,
             "schedule": None,
         }
-        mock_generate_tasks.return_value = [
-            {
-                "task_key": "task1",
-                "task_type": "notebook",
-                "notebook_task": {"notebook_path": "/test/notebook", "base_parameters": {}},
-            }
-        ]
+        mock_generate_tasks.return_value = (
+            [
+                {
+                    "task_key": "task1",
+                    "task_type": "notebook",
+                    "notebook_task": {"notebook_path": "/test/notebook", "base_parameters": {}},
+                }
+            ],
+            {"task_config": "{}"},
+        )
         # Mock Task object without sql_task (notebook task)
         mock_task = MagicMock()
         mock_task.sql_task = None  # No SQL task
         mock_convert.return_value = mock_task
         mock_serialize.return_value = {"task_key": "task1", "notebook_task": {}}
+
+        # Mock jobs.get to return existing job
+        mock_existing_job = MagicMock()
+        mock_existing_job.job_id = 12345
+        mock_workspace_client.jobs.get.return_value = mock_existing_job
 
         orchestrator = JobOrchestrator(control_table="test_table", workspace_client=mock_workspace_client)
         job_id = orchestrator.create_or_update_job("test_job")
@@ -315,13 +358,16 @@ class TestJobOrchestrator:
             "trigger": None,
             "schedule": None,
         }
-        mock_generate_tasks.return_value = [
-            {
-                "task_key": "sql_task1",
-                "task_type": "sql_query",
-                "sql_task": {"warehouse_id": "warehouse123", "query": {"query": "SELECT 1"}},
-            }
-        ]
+        mock_generate_tasks.return_value = (
+            [
+                {
+                    "task_key": "sql_task1",
+                    "task_type": "sql_query",
+                    "sql_task": {"warehouse_id": "warehouse123", "query": {"query": "SELECT 1"}},
+                }
+            ],
+            {"task_config": '{"warehouse_id": "warehouse123", "sql_query": "SELECT 1"}'},
+        )
         # Mock Task object with inline SQL query (dict format)
         mock_task = MagicMock()
         mock_task.task_key = "sql_task1"

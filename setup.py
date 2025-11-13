@@ -20,18 +20,24 @@ setup(
         "License :: OSI Approved :: Apache Software License",
         "Operating System :: OS Independent",
         "Programming Language :: Python :: 3",
-        "Programming Language :: Python :: 3.8",
-        "Programming Language :: Python :: 3.9",
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python :: 3.11",
     ],
-    python_requires=">=3.8",
+    keywords="databricks jobs orchestration metadata workflow etl data-engineering",
+    python_requires=">=3.10",
     install_requires=[
         "databricks-sdk>=0.1.0",
-        "pyspark>=3.0.0",
+        "pyspark>=3.5.0",
         "pyyaml>=6.0",
-        "delta-spark>=2.0.0",
     ],
+    extras_require={
+        "dev": [
+            "pytest>=7.0.0",
+            "pytest-cov>=4.0.0",
+            "pytest-mock>=3.12.0",
+            "delta-spark>=3.2.0",
+        ],
+    },
     entry_points={
         "console_scripts": [
             "lakeflow-jobs-meta=lakeflow_jobs_meta.main:main",

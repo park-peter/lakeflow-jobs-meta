@@ -63,9 +63,8 @@ class TestMetadataMonitor:
     @patch("lakeflow_jobs_meta.monitor.MetadataManager")
     @patch("lakeflow_jobs_meta.monitor.JobOrchestrator")
     @patch("lakeflow_jobs_meta.monitor.WorkspaceClient")
-    @patch("lakeflow_jobs_meta.monitor.SparkSession")
     def test_check_and_update_with_changes(
-        self, mock_spark_session, mock_client_class, mock_orchestrator_class, mock_manager_class
+        self, mock_client_class, mock_orchestrator_class, mock_manager_class
     ):
         """Test check_and_update when changes are detected."""
         mock_client_instance = MagicMock()
@@ -104,7 +103,7 @@ class TestMetadataMonitor:
         mock_client_class.return_value = mock_client_instance
 
         mock_manager_instance = MagicMock()
-        mock_manager_instance.sync_from_volume.return_value = 5
+        mock_manager_instance.sync_from_volume.return_value = (5, ['job1'])  # Return tuple
         mock_manager_instance.detect_changes.return_value = {
             "new_jobs": [],
             "updated_jobs": [],
@@ -142,14 +141,14 @@ class TestMetadataMonitor:
 
         monitor = MetadataMonitor("test_table", volume_path="/Volumes/test")
 
-        # Mock dbutils
-        mock_dbutils = MagicMock()
-        mock_file = MagicMock()
-        mock_file.name = "config.yaml"
-        mock_file.modificationTime = 1234567890
-        mock_dbutils.fs.ls.return_value = [mock_file]
+        # Mock Spark session
+        mock_spark = MagicMock()
+        mock_row = MagicMock()
+        mock_row.__getitem__ = lambda self, key: {"name": "config.yaml", "path": "/Volumes/test/config.yaml"}.get(key)
+        mock_row.get = lambda key, default=None: {"name": "config.yaml", "path": "/Volumes/test/config.yaml"}.get(key, default)
+        mock_spark.sql.return_value.collect.return_value = [mock_row]
 
-        with patch("lakeflow_jobs_meta.monitor.dbutils", mock_dbutils):
+        with patch("pyspark.sql.SparkSession.getActiveSession", return_value=mock_spark):
             result = monitor._check_yaml_files_changed()
 
             assert result is True
@@ -172,16 +171,16 @@ class TestMetadataMonitor:
         mock_orchestrator_class.return_value = mock_orchestrator_instance
 
         monitor = MetadataMonitor("test_table", volume_path="/Volumes/test")
-        monitor.last_yaml_file_times = {"config.yaml": 1234567890}
+        monitor.last_yaml_file_times = {"config.yaml": "/Volumes/test/config.yaml"}
 
-        # Mock dbutils
-        mock_dbutils = MagicMock()
-        mock_file = MagicMock()
-        mock_file.name = "config.yaml"
-        mock_file.modificationTime = 1234567891  # Different modification time
-        mock_dbutils.fs.ls.return_value = [mock_file]
+        # Mock Spark session with different file path (modified)
+        mock_spark = MagicMock()
+        mock_row = MagicMock()
+        mock_row.__getitem__ = lambda self, key: {"name": "config.yaml", "path": "/Volumes/test/config.yaml.new"}.get(key)
+        mock_row.get = lambda key, default=None: {"name": "config.yaml", "path": "/Volumes/test/config.yaml.new"}.get(key, default)
+        mock_spark.sql.return_value.collect.return_value = [mock_row]
 
-        with patch("lakeflow_jobs_meta.monitor.dbutils", mock_dbutils):
+        with patch("pyspark.sql.SparkSession.getActiveSession", return_value=mock_spark):
             result = monitor._check_yaml_files_changed()
 
             assert result is True

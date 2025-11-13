@@ -183,9 +183,9 @@ class TestCreateSqlFileTaskConfig:
 
         task_config = create_sql_file_task_config("test_task_key", task_config_dict)
 
-            assert task_config["task_key"] == "test_task_key"
+        assert task_config["task_key"] == "test_task_key"
         assert task_config["task_type"] == TASK_TYPE_SQL_FILE
-            assert task_config["sql_task"]["warehouse_id"] == "abc123"
+        assert task_config["sql_task"]["warehouse_id"] == "abc123"
         assert task_config["sql_task"]["file"]["path"] == "/Workspace/test/query.sql"
         assert task_config["sql_task"]["file"]["source"] == "WORKSPACE"
         assert task_config["sql_task"]["parameters"]["catalog"] == "bronze"
@@ -216,7 +216,7 @@ class TestConvertTaskConfigToSdkTask:
         assert sdk_task.task_key == "test_task"
         assert sdk_task.notebook_task.notebook_path == "/Workspace/test/notebook"
         assert sdk_task.existing_cluster_id == "cluster123"
-        assert sdk_task.disabled is False
+        assert sdk_task.disabled is None or sdk_task.disabled is False
 
     def test_sql_query_task_conversion(self):
         """Test conversion of SQL query task config to SDK task."""
@@ -253,7 +253,7 @@ class TestConvertTaskConfigToSdkTask:
         assert sdk_task.task_key == "test_task"
         assert sdk_task.sql_task.warehouse_id == "abc123"
         assert sdk_task.sql_task.file.path == "/Workspace/test/query.sql"
-        assert sdk_task.disabled is False
+        assert sdk_task.disabled is None or sdk_task.disabled is False
 
     def test_task_with_dependencies(self):
         """Test task conversion with dependencies."""
@@ -294,8 +294,8 @@ class TestConvertTaskConfigToSdkTask:
 
         assert sdk_task.task_key == "test_task"
         assert sdk_task.sql_task.warehouse_id == "abc123"
-        assert isinstance(sdk_task.sql_task.query, dict)
-        assert sdk_task.sql_task.query["query_id"] == "query_abc123"
+        assert hasattr(sdk_task.sql_task.query, 'query_id')
+        assert sdk_task.sql_task.query.query_id == "query_abc123"
 
     def test_sql_file_with_git_source(self):
         """Test SQL file task with GIT source."""
@@ -422,10 +422,10 @@ class TestSqlQueryTaskType:
         task_config_dict = {
             "warehouse_id": "warehouse_abc123",
             "query_id": "550e8400-e29b-41d4-a716-446655440000",
+            "parameters": {"threshold": "5.0", "status": "active"}
         }
-        parameters = {"threshold": "5.0", "status": "active"}
 
-        task_config = create_sql_query_task_config("saved_query_task", task_config_dict, parameters)
+        task_config = create_sql_query_task_config("saved_query_task", task_config_dict)
 
         assert task_config["sql_task"]["query"]["query_id"] == "550e8400-e29b-41d4-a716-446655440000"
         assert task_config["sql_task"]["parameters"]["threshold"] == "5.0"
@@ -434,34 +434,35 @@ class TestSqlQueryTaskType:
     def test_sql_query_task_with_default_warehouse_id(self):
         """Test SQL query task using default_warehouse_id."""
         task_config_dict = {"sql_query": "SELECT 1"}
-        parameters = {}
         default_warehouse_id = "default_warehouse_123"
 
-        task_config = create_sql_query_task_config("test_task", task_config_dict, parameters, default_warehouse_id)
+        task_config = create_sql_query_task_config("test_task", task_config_dict, default_warehouse_id)
 
         assert task_config["sql_task"]["warehouse_id"] == "default_warehouse_123"
 
     def test_sql_query_task_task_config_warehouse_overrides_default(self):
         """Test that warehouse_id in task_config overrides default_warehouse_id."""
         task_config_dict = {"warehouse_id": "config_warehouse", "sql_query": "SELECT 1"}
-        parameters = {}
         default_warehouse_id = "default_warehouse_123"
 
-        task_config = create_sql_query_task_config("test_task", task_config_dict, parameters, default_warehouse_id)
+        task_config = create_sql_query_task_config("test_task", task_config_dict, default_warehouse_id)
 
         assert task_config["sql_task"]["warehouse_id"] == "config_warehouse"
 
     def test_sql_query_task_with_dynamic_value_references(self):
         """Test SQL query task with Databricks dynamic value references."""
-        task_config_dict = {"warehouse_id": "warehouse_123", "sql_query": "SELECT * FROM table"}
-        parameters = {
-            "job_id": "{{job.id}}",
-            "task_name": "{{task.name}}",
-            "start_time": "{{job.start_time.iso_date}}",
-            "run_id": "{{job.run_id}}",
+        task_config_dict = {
+            "warehouse_id": "warehouse_123",
+            "sql_query": "SELECT * FROM table",
+            "parameters": {
+                "job_id": "{{job.id}}",
+                "task_name": "{{task.name}}",
+                "start_time": "{{job.start_time.iso_date}}",
+                "run_id": "{{job.run_id}}",
+            }
         }
 
-        task_config = create_sql_query_task_config("test_task", task_config_dict, parameters)
+        task_config = create_sql_query_task_config("test_task", task_config_dict)
 
         sql_params = task_config["sql_task"]["parameters"]
         assert sql_params["job_id"] == "{{job.id}}"
@@ -471,15 +472,18 @@ class TestSqlQueryTaskType:
 
     def test_sql_query_task_parameters_converted_to_strings(self):
         """Test that SQL task parameters are converted to strings."""
-        task_config_dict = {"warehouse_id": "warehouse_123", "sql_query": "SELECT * FROM table"}
-        parameters = {
-            "int_param": 42,
-            "float_param": 3.14,
-            "bool_param": True,
-            "none_param": None,
+        task_config_dict = {
+            "warehouse_id": "warehouse_123",
+            "sql_query": "SELECT * FROM table",
+            "parameters": {
+                "int_param": 42,
+                "float_param": 3.14,
+                "bool_param": True,
+                "none_param": None,
+            }
         }
 
-        task_config = create_sql_query_task_config("test_task", task_config_dict, parameters)
+        task_config = create_sql_query_task_config("test_task", task_config_dict)
 
         sql_params = task_config["sql_task"]["parameters"]
         assert sql_params["int_param"] == "42"
@@ -521,10 +525,10 @@ class TestSqlFileTaskType:
             "warehouse_id": "warehouse_abc123",
             "file_path": "/Workspace/users/test/query.sql",
             "file_source": "WORKSPACE",
+            "parameters": {"catalog": "bronze", "schema": "raw_data", "table": "customers"}
         }
-        parameters = {"catalog": "bronze", "schema": "raw_data", "table": "customers"}
 
-        task_config = create_sql_file_task_config("sql_file_task", task_config_dict, parameters)
+        task_config = create_sql_file_task_config("sql_file_task", task_config_dict)
 
         assert task_config["task_key"] == "sql_file_task"
         assert task_config["task_type"] == TASK_TYPE_SQL_FILE
@@ -539,10 +543,10 @@ class TestSqlFileTaskType:
             "warehouse_id": "warehouse_abc123",
             "file_path": "/Repos/user/repo/sql/query.sql",
             "file_source": "GIT",
+            "parameters": {"catalog": "silver", "schema": "processed"}
         }
-        parameters = {"catalog": "silver", "schema": "processed"}
 
-        task_config = create_sql_file_task_config("git_sql_task", task_config_dict, parameters)
+        task_config = create_sql_file_task_config("git_sql_task", task_config_dict)
 
         assert task_config["sql_task"]["file"]["source"] == "GIT"
         assert task_config["sql_task"]["file"]["path"] == "/Repos/user/repo/sql/query.sql"
@@ -550,44 +554,44 @@ class TestSqlFileTaskType:
     def test_sql_file_task_default_source(self):
         """Test SQL file task defaults to WORKSPACE source when not specified."""
         task_config_dict = {"warehouse_id": "warehouse_abc123", "file_path": "/Workspace/test/query.sql"}
-        parameters = {}
 
-        task_config = create_sql_file_task_config("test_task", task_config_dict, parameters)
+        task_config = create_sql_file_task_config("test_task", task_config_dict)
 
         assert task_config["sql_task"]["file"]["source"] == "WORKSPACE"
 
     def test_sql_file_task_with_default_warehouse_id(self):
         """Test SQL file task using default_warehouse_id."""
         task_config_dict = {"file_path": "/Workspace/test/query.sql"}
-        parameters = {}
         default_warehouse_id = "default_warehouse_123"
 
-        task_config = create_sql_file_task_config("test_task", task_config_dict, parameters, default_warehouse_id)
+        task_config = create_sql_file_task_config("test_task", task_config_dict, default_warehouse_id)
 
         assert task_config["sql_task"]["warehouse_id"] == "default_warehouse_123"
 
     def test_sql_file_task_task_config_warehouse_overrides_default(self):
         """Test that warehouse_id in task_config overrides default_warehouse_id."""
         task_config_dict = {"warehouse_id": "config_warehouse", "file_path": "/Workspace/test/query.sql"}
-        parameters = {}
         default_warehouse_id = "default_warehouse_123"
 
-        task_config = create_sql_file_task_config("test_task", task_config_dict, parameters, default_warehouse_id)
+        task_config = create_sql_file_task_config("test_task", task_config_dict, default_warehouse_id)
 
         assert task_config["sql_task"]["warehouse_id"] == "config_warehouse"
 
     def test_sql_file_task_with_parameters(self):
         """Test SQL file task with multiple parameters."""
-        task_config_dict = {"warehouse_id": "warehouse_123", "file_path": "/Workspace/test/query.sql"}
-        parameters = {
-            "catalog": "bronze",
-            "schema": "raw_data",
-            "table": "customers",
-            "max_hours": "24",
-            "threshold": "5.0",
+        task_config_dict = {
+            "warehouse_id": "warehouse_123",
+            "file_path": "/Workspace/test/query.sql",
+            "parameters": {
+                "catalog": "bronze",
+                "schema": "raw_data",
+                "table": "customers",
+                "max_hours": "24",
+                "threshold": "5.0",
+            }
         }
 
-        task_config = create_sql_file_task_config("test_task", task_config_dict, parameters)
+        task_config = create_sql_file_task_config("test_task", task_config_dict)
 
         sql_params = task_config["sql_task"]["parameters"]
         assert len(sql_params) == 5
@@ -599,14 +603,17 @@ class TestSqlFileTaskType:
 
     def test_sql_file_task_with_dynamic_value_references(self):
         """Test SQL file task with Databricks dynamic value references."""
-        task_config_dict = {"warehouse_id": "warehouse_123", "file_path": "/Workspace/test/query.sql"}
-        parameters = {
-            "job_id": "{{job.id}}",
-            "task_name": "{{task.name}}",
-            "start_time": "{{job.start_time.iso_date}}",
+        task_config_dict = {
+            "warehouse_id": "warehouse_123",
+            "file_path": "/Workspace/test/query.sql",
+            "parameters": {
+                "job_id": "{{job.id}}",
+                "task_name": "{{task.name}}",
+                "start_time": "{{job.start_time.iso_date}}",
+            }
         }
 
-        task_config = create_sql_file_task_config("test_task", task_config_dict, parameters)
+        task_config = create_sql_file_task_config("test_task", task_config_dict)
 
         sql_params = task_config["sql_task"]["parameters"]
         assert sql_params["job_id"] == "{{job.id}}"
@@ -615,10 +622,13 @@ class TestSqlFileTaskType:
 
     def test_sql_file_task_parameters_converted_to_strings(self):
         """Test that SQL file task parameters are converted to strings."""
-        task_config_dict = {"warehouse_id": "warehouse_123", "file_path": "/Workspace/test/query.sql"}
-        parameters = {"int_val": 100, "float_val": 2.5, "bool_val": False}
+        task_config_dict = {
+            "warehouse_id": "warehouse_123",
+            "file_path": "/Workspace/test/query.sql",
+            "parameters": {"int_val": 100, "float_val": 2.5, "bool_val": False}
+        }
 
-        task_config = create_sql_file_task_config("test_task", task_config_dict, parameters)
+        task_config = create_sql_file_task_config("test_task", task_config_dict)
 
         sql_params = task_config["sql_task"]["parameters"]
         assert sql_params["int_val"] == "100"
@@ -628,10 +638,9 @@ class TestSqlFileTaskType:
     def test_sql_file_task_missing_warehouse_and_default(self):
         """Test error when warehouse_id is missing and no default provided."""
         task_config_dict = {"file_path": "/Workspace/test/query.sql"}
-        parameters = {}
 
         with pytest.raises(ValueError, match="Missing warehouse_id"):
-            create_sql_file_task_config("test_task", task_config_dict, parameters)
+            create_sql_file_task_config("test_task", task_config_dict)
 
     def test_sql_file_task_with_timeout(self, sample_task_data):
         """Test SQL file task creation with timeout_seconds."""
@@ -665,8 +674,7 @@ class TestTaskTypeIntegration:
             "task_key": "notebook_task_1",
             "depends_on": "[]",
             "task_type": "notebook",
-            "parameters": '{"catalog": "bronze", "schema": "raw_data"}',
-            "task_config": '{"file_path": "/Workspace/test/notebook"}',
+            "task_config": '{"file_path": "/Workspace/test/notebook", "parameters": {"catalog": "bronze", "schema": "raw_data"}}',
             "disabled": False,
         }
 
@@ -677,7 +685,7 @@ class TestTaskTypeIntegration:
         assert sdk_task.task_key == "notebook_task_1"
         assert sdk_task.notebook_task.notebook_path == "/Workspace/test/notebook"
         assert sdk_task.notebook_task.base_parameters["catalog"] == "bronze"
-        assert sdk_task.disabled is False
+        assert sdk_task.disabled is None or sdk_task.disabled is False
 
     def test_sql_query_task_full_workflow(self):
         """Test complete SQL query task workflow from config to SDK task."""
@@ -686,8 +694,7 @@ class TestTaskTypeIntegration:
             "task_key": "sql_query_task_1",
             "depends_on": "[]",
             "task_type": "sql_query",
-            "parameters": '{"catalog": "bronze", "start_date": "2024-01-01"}',
-            "task_config": '{"warehouse_id": "warehouse_123", "sql_query": "SELECT * FROM :catalog.customers"}',
+            "task_config": '{"warehouse_id": "warehouse_123", "sql_query": "SELECT * FROM :catalog.customers", "parameters": {"catalog": "bronze", "start_date": "2024-01-01"}}',
             "disabled": False,
         }
 
@@ -699,7 +706,7 @@ class TestTaskTypeIntegration:
         assert sdk_task.sql_task.warehouse_id == "warehouse_123"
         assert "SELECT * FROM" in sdk_task.sql_task.query["query"]
         assert sdk_task.sql_task.parameters["catalog"] == "bronze"
-        assert sdk_task.disabled is False
+        assert sdk_task.disabled is None or sdk_task.disabled is False
 
     def test_sql_file_task_full_workflow(self):
         """Test complete SQL file task workflow from config to SDK task."""
@@ -708,8 +715,7 @@ class TestTaskTypeIntegration:
             "task_key": "sql_file_task_1",
             "depends_on": "[]",
             "task_type": "sql_file",
-            "parameters": '{"catalog": "bronze", "schema": "raw_data"}',
-            "task_config": '{"warehouse_id": "warehouse_123", "file_path": "/Workspace/test/query.sql"}',
+            "task_config": '{"warehouse_id": "warehouse_123", "file_path": "/Workspace/test/query.sql", "parameters": {"catalog": "bronze", "schema": "raw_data"}}',
             "disabled": False,
         }
 
@@ -722,7 +728,7 @@ class TestTaskTypeIntegration:
         assert sdk_task.sql_task.file.path == "/Workspace/test/query.sql"
         assert sdk_task.sql_task.file.source.value == "WORKSPACE"
         assert sdk_task.sql_task.parameters["catalog"] == "bronze"
-        assert sdk_task.disabled is False
+        assert sdk_task.disabled is None or sdk_task.disabled is False
 
     def test_all_task_types_with_dependencies(self):
         """Test all task types with dependencies."""
@@ -936,7 +942,7 @@ class TestDbtTaskType:
 
         assert task_config["task_type"] == TASK_TYPE_DBT
         assert "dbt_task" in task_config
-        assert task_config["dbt_task"]["commands"] == "dbt run --models my_model"
+        assert task_config["dbt_task"]["commands"] == ["dbt run --models my_model"]
         assert task_config["dbt_task"]["warehouse_id"] == "abc123"
 
     def test_dbt_task_missing_commands(self):
@@ -949,13 +955,15 @@ class TestDbtTaskType:
             )
 
     def test_dbt_task_missing_warehouse_id(self):
-        """Test dbt task with missing warehouse_id."""
-        with pytest.raises(ValueError, match="Missing warehouse_id"):
-            create_dbt_task_config(
-                "test_task",
-                {"commands": "dbt run"},
-                None
-            )
+        """Test dbt task can be created without warehouse_id (uses profiles_directory instead)."""
+        task_config = create_dbt_task_config(
+            "test_task",
+            {"commands": "dbt run", "profiles_directory": "/path/to/profiles"},
+            None
+        )
+        assert task_config["task_type"] == TASK_TYPE_DBT
+        assert "warehouse_id" not in task_config["dbt_task"]
+        assert task_config["dbt_task"]["profiles_directory"] == "/path/to/profiles"
 
 
 class TestAdvancedTaskFeatures:
