@@ -34,8 +34,6 @@ setup(
     python_requires=">=3.10",
     install_requires=[
         "databricks-sdk>=0.65.0",
-        "pyspark>=3.5.0",
-        "pyyaml>=6.0",
     ],
     extras_require={
         "dev": [
@@ -43,6 +41,8 @@ setup(
             "pytest-cov>=4.0.0",
             "pytest-mock>=3.12.0",
             "delta-spark>=3.2.0",
+            "pyspark>=3.5.0",
+            "pyyaml>=6.0",
         ],
     },
     entry_points={
