@@ -18,6 +18,7 @@ from databricks.sdk.service.jobs import (
     TaskNotificationSettings,
     JobEmailNotifications,
     JobEditMode,
+    JobParameterDefinition,
 )
 
 try:
@@ -976,7 +977,21 @@ class JobOrchestrator:
                     job_settings.notification_settings.email_notifications = email_notif_obj
 
             if job_settings_config.get("parameters"):
-                job_settings.parameters = job_settings_config["parameters"]
+                params_list = job_settings_config["parameters"]
+                if isinstance(params_list, list):
+                    job_params = []
+                    for param_dict in params_list:
+                        if isinstance(param_dict, dict):
+                            job_param = JobParameterDefinition(
+                                name=param_dict.get("name"),
+                                default=param_dict.get("default"),
+                            )
+                            job_params.append(job_param)
+                        else:
+                            job_params.append(param_dict)
+                    job_settings.parameters = job_params
+                else:
+                    job_settings.parameters = params_list
 
             self.workspace_client.jobs.reset(
                 job_id=stored_job_id,
@@ -1076,7 +1091,21 @@ class JobOrchestrator:
                         job_settings_kwargs["notification_settings"].email_notifications = email_notif_obj
 
                 if job_settings_config.get("parameters"):
-                    job_settings_kwargs["parameters"] = job_settings_config["parameters"]
+                    params_list = job_settings_config["parameters"]
+                    if isinstance(params_list, list):
+                        job_params = []
+                        for param_dict in params_list:
+                            if isinstance(param_dict, dict):
+                                job_param = JobParameterDefinition(
+                                    name=param_dict.get("name"),
+                                    default=param_dict.get("default"),
+                                )
+                                job_params.append(job_param)
+                            else:
+                                job_params.append(param_dict)
+                        job_settings_kwargs["parameters"] = job_params
+                    else:
+                        job_settings_kwargs["parameters"] = params_list
 
                 if "job_clusters" in job_settings_kwargs:
                     job_clusters_list = []
@@ -1149,12 +1178,20 @@ class JobOrchestrator:
 
                                 new_cluster_obj = ClusterSpec(**new_cluster_dict)
                                 cluster_dict["new_cluster"] = new_cluster_obj
-                            except Exception:
-                                pass
 
-                        job_cluster = JobCluster(**cluster_dict)
-                        job_clusters_list.append(job_cluster)
-                    job_settings_kwargs["job_clusters"] = job_clusters_list
+                                job_cluster = JobCluster(**cluster_dict)
+                                job_clusters_list.append(job_cluster)
+                            except Exception as e:
+                                logger.warning(
+                                    f"Job '{job_name}': Failed to create job cluster "
+                                    f"'{cluster_dict.get('job_cluster_key')}': {e}"
+                                )
+                        else:
+                            job_cluster = JobCluster(**cluster_dict)
+                            job_clusters_list.append(job_cluster)
+
+                    if job_clusters_list:
+                        job_settings_kwargs["job_clusters"] = job_clusters_list
 
                 created_job = self.workspace_client.jobs.create(**job_settings_kwargs)
 

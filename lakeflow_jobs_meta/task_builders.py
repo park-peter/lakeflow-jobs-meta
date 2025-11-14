@@ -453,9 +453,6 @@ def create_dbt_task_config(
         dbt_config["warehouse_id"] = warehouse_id
 
     profiles_dir = task_config.get("profiles_directory")
-    logger.debug(
-        "DEBUG: profiles_directory for task_key '%s': %s (type: %s)", task_key, profiles_dir, type(profiles_dir)
-    )
     if profiles_dir:
         if warehouse_id:
             logger.warning(
@@ -697,11 +694,6 @@ def convert_task_config_to_sdk_task(task_config: Dict[str, Any]) -> Task:
             job_cluster_key=job_cluster_key,
             existing_cluster_id=existing_cluster_id,
             notification_settings=notification_settings_obj,
-        )
-        logger.debug(
-            "DEBUG: Created Task object for task_key '%s', dbt_task.project_directory: %s",
-            task_key,
-            task_obj.dbt_task.project_directory if task_obj.dbt_task else None,
         )
 
     else:

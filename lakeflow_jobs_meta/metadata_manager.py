@@ -167,137 +167,165 @@ class MetadataManager:
         # Flatten YAML structure into DataFrame (grouped by job)
         rows = []
         yaml_job_tasks = {}  # Track tasks per job for deletion detection
+        failed_jobs = []  # Track jobs that failed validation
 
         for job in config["jobs"]:
-            job_name = job["job_name"]
-            tasks = job.get("tasks", [])
-            if not tasks:
-                raise ValueError(f"Job '{job_name}' must have at least one task")
+            job_name = job.get("job_name")
+            if not job_name:
+                logger.warning("Skipping job without 'job_name' field")
+                continue
 
-            job_level_keys = [
-                "tags",
-                "environments",
-                "parameters",
-                "timeout_seconds",
-                "max_concurrent_runs",
-                "queue",
-                "continuous",
-                "trigger",
-                "schedule",
-                "job_clusters",
-                "notification_settings",
-                "edit_mode",
-            ]
-            job_config_dict = {}
-            for key in job_level_keys:
-                if key in job:
-                    if key == "environments":
-                        job_config_dict["_job_environments"] = job[key]
-                    else:
-                        job_config_dict[key] = job[key]
+            try:
+                tasks = job.get("tasks", [])
+                if not tasks:
+                    raise ValueError(f"Job '{job_name}' must have at least one task")
 
-            job_config_json = json.dumps(job_config_dict) if job_config_dict else json.dumps({})
+                job_level_keys = [
+                    "tags",
+                    "environments",
+                    "parameters",
+                    "timeout_seconds",
+                    "max_concurrent_runs",
+                    "queue",
+                    "continuous",
+                    "trigger",
+                    "schedule",
+                    "job_clusters",
+                    "notification_settings",
+                    "edit_mode",
+                ]
+                job_config_dict = {}
+                for key in job_level_keys:
+                    if key in job:
+                        if key == "environments":
+                            job_config_dict["_job_environments"] = job[key]
+                        else:
+                            job_config_dict[key] = job[key]
 
-            yaml_job_tasks[job_name] = set()
-            task_keys_in_job = set()
+                job_config_json = json.dumps(job_config_dict) if job_config_dict else json.dumps({})
 
-            # First pass: collect all task_keys
-            for task in tasks:
-                task_key = task.get("task_key")
-                if not task_key:
-                    raise ValueError(f"Task must have 'task_key' field in job '{job_name}'")
-                task_keys_in_job.add(task_key)
+                task_keys_in_job = set()
 
-            # Second pass: validate dependencies and build rows
-            for task in tasks:
-                task_key = task.get("task_key")
-                task_type = task.get("task_type")
-                if not task_type:
-                    raise ValueError(f"Task '{task_key}' must have 'task_type' field")
+                # First pass: collect all task_keys
+                for task in tasks:
+                    task_key = task.get("task_key")
+                    if not task_key:
+                        raise ValueError(f"Task must have 'task_key' field in job '{job_name}'")
+                    task_keys_in_job.add(task_key)
 
-                # Extract depends_on (list of task_key strings, default to empty list)
-                depends_on = task.get("depends_on", [])
-                if depends_on is None:
-                    depends_on = []
-                if not isinstance(depends_on, list):
-                    raise ValueError(f"Task '{task_key}' depends_on must be a list of task_key strings")
+                # Initialize yaml_job_tasks for this job (will be populated in second pass)
+                job_task_keys = set()
 
-                # Validate all dependencies exist
-                for dep_key in depends_on:
-                    if not isinstance(dep_key, str):
-                        raise ValueError(f"Task '{task_key}' depends_on must contain only task_key strings")
-                    if dep_key not in task_keys_in_job:
-                        raise ValueError(
-                            f"Task '{task_key}' depends on '{dep_key}' which does not exist in job '{job_name}'"
-                        )
+                # Second pass: validate dependencies and build rows
+                for task in tasks:
+                    task_key = task.get("task_key")
+                    task_type = task.get("task_type")
+                    if not task_type:
+                        raise ValueError(f"Task '{task_key}' must have 'task_type' field")
 
-                # Extract task-specific config
-                # (file_path, sql_query, query_id, warehouse_id, run_if, environment_key, job_cluster_key, existing_cluster_id, notification_settings, etc.)
-                task_config = {}
-                if "file_path" in task:
-                    task_config["file_path"] = task["file_path"]
-                if "sql_query" in task:
-                    task_config["sql_query"] = task["sql_query"]
-                if "query_id" in task:
-                    task_config["query_id"] = task["query_id"]
-                if "warehouse_id" in task:
-                    task_config["warehouse_id"] = task["warehouse_id"]
-                if "timeout_seconds" in task:
-                    task_config["timeout_seconds"] = task["timeout_seconds"]
-                if "run_if" in task:
-                    task_config["run_if"] = task["run_if"]
-                if "environment_key" in task:
-                    task_config["environment_key"] = task["environment_key"]
-                if "job_cluster_key" in task:
-                    task_config["job_cluster_key"] = task["job_cluster_key"]
-                if "existing_cluster_id" in task:
-                    task_config["existing_cluster_id"] = task["existing_cluster_id"]
-                if "notification_settings" in task:
-                    task_config["notification_settings"] = task["notification_settings"]
-                if "package_name" in task:
-                    task_config["package_name"] = task["package_name"]
-                if "entry_point" in task:
-                    task_config["entry_point"] = task["entry_point"]
-                if "main_class_name" in task:
-                    task_config["main_class_name"] = task["main_class_name"]
-                if "pipeline_id" in task:
-                    task_config["pipeline_id"] = task["pipeline_id"]
-                if "commands" in task:
-                    task_config["commands"] = task["commands"]
-                if "profiles_directory" in task and task["profiles_directory"]:
-                    task_config["profiles_directory"] = task["profiles_directory"]
-                if "project_directory" in task and task["project_directory"]:
-                    task_config["project_directory"] = task["project_directory"]
-                if "catalog" in task:
-                    task_config["catalog"] = task["catalog"]
-                if "schema" in task:
-                    task_config["schema"] = task["schema"]
-                if "parameters" in task:
-                    task_config["parameters"] = task["parameters"]
+                    # Extract depends_on (list of task_key strings, default to empty list)
+                    depends_on = task.get("depends_on", [])
+                    if depends_on is None:
+                        depends_on = []
+                    if not isinstance(depends_on, list):
+                        raise ValueError(f"Task '{task_key}' depends_on must be a list of task_key strings")
 
-                current_user = _get_current_user()
-                disabled = task.get("disabled", False)
+                    # Validate all dependencies exist
+                    for dep_key in depends_on:
+                        if not isinstance(dep_key, str):
+                            raise ValueError(f"Task '{task_key}' depends_on must contain only task_key strings")
+                        if dep_key not in task_keys_in_job:
+                            raise ValueError(
+                                f"Task '{task_key}' depends on '{dep_key}' which does not exist in job '{job_name}'"
+                            )
 
-                yaml_job_tasks[job_name].add(task_key)
+                    # Extract task-specific config
+                    # (file_path, sql_query, query_id, warehouse_id, run_if, environment_key, job_cluster_key, existing_cluster_id, notification_settings, etc.)
+                    task_config = {}
+                    if "file_path" in task:
+                        task_config["file_path"] = task["file_path"]
+                    if "sql_query" in task:
+                        task_config["sql_query"] = task["sql_query"]
+                    if "query_id" in task:
+                        task_config["query_id"] = task["query_id"]
+                    if "warehouse_id" in task:
+                        task_config["warehouse_id"] = task["warehouse_id"]
+                    if "timeout_seconds" in task:
+                        task_config["timeout_seconds"] = task["timeout_seconds"]
+                    if "run_if" in task:
+                        task_config["run_if"] = task["run_if"]
+                    if "environment_key" in task:
+                        task_config["environment_key"] = task["environment_key"]
+                    if "job_cluster_key" in task:
+                        task_config["job_cluster_key"] = task["job_cluster_key"]
+                    if "existing_cluster_id" in task:
+                        task_config["existing_cluster_id"] = task["existing_cluster_id"]
+                    if "notification_settings" in task:
+                        task_config["notification_settings"] = task["notification_settings"]
+                    if "package_name" in task:
+                        task_config["package_name"] = task["package_name"]
+                    if "entry_point" in task:
+                        task_config["entry_point"] = task["entry_point"]
+                    if "main_class_name" in task:
+                        task_config["main_class_name"] = task["main_class_name"]
+                    if "pipeline_id" in task:
+                        task_config["pipeline_id"] = task["pipeline_id"]
+                    if "commands" in task:
+                        task_config["commands"] = task["commands"]
+                    if "profiles_directory" in task and task["profiles_directory"]:
+                        task_config["profiles_directory"] = task["profiles_directory"]
+                    if "project_directory" in task and task["project_directory"]:
+                        task_config["project_directory"] = task["project_directory"]
+                    if "catalog" in task:
+                        task_config["catalog"] = task["catalog"]
+                    if "schema" in task:
+                        task_config["schema"] = task["schema"]
+                    if "parameters" in task:
+                        task_config["parameters"] = task["parameters"]
 
-                task_config_json = json.dumps(task_config)
+                    current_user = _get_current_user()
+                    disabled = task.get("disabled", False)
 
-                rows.append(
-                    {
-                        "job_name": job_name,
-                        "task_key": task_key,
-                        "depends_on": json.dumps(depends_on),
-                        "task_type": task_type,
-                        "task_config": task_config_json,
-                        "job_config": job_config_json,
-                        "disabled": disabled,
-                        "created_by": current_user,
-                        "updated_by": current_user,
-                    }
+                    job_task_keys.add(task_key)
+
+                    task_config_json = json.dumps(task_config)
+
+                    rows.append(
+                        {
+                            "job_name": job_name,
+                            "task_key": task_key,
+                            "depends_on": json.dumps(depends_on),
+                            "task_type": task_type,
+                            "task_config": task_config_json,
+                            "job_config": job_config_json,
+                            "disabled": disabled,
+                            "created_by": current_user,
+                            "updated_by": current_user,
+                        }
+                    )
+
+                # Validate no circular dependencies
+                _validate_no_circular_dependencies(job_name, tasks)
+
+                # All validation passed, add this job to yaml_job_tasks
+                yaml_job_tasks[job_name] = job_task_keys
+                logger.debug(
+                    f"Successfully processed job '{job_name}' with {len(job_task_keys)} task(s): {sorted(job_task_keys)}"
                 )
 
-            # Validate no circular dependencies
-            _validate_no_circular_dependencies(job_name, tasks)
+            except Exception as e:
+                error_msg = str(e)
+                logger.warning(f"Failed to load job '{job_name}': {error_msg}")
+                failed_jobs.append({"job": job_name, "error": error_msg})
+                # Remove any rows that were added for this job before the error
+                rows = [row for row in rows if row["job_name"] != job_name]
+                continue
+
+        if failed_jobs:
+            logger.warning(
+                f"Failed to load {len(failed_jobs)} job(s): {failed_jobs}. "
+                f"Continuing with {len(set(row['job_name'] for row in rows))} valid job(s)."
+            )
 
         if not rows:
             logger.warning(f"No tasks found in YAML file '{yaml_path}'")
@@ -384,8 +412,9 @@ class MetadataManager:
                 )
 
         logger.info(
-            "Successfully loaded %d tasks from '%s' into %s",
+            "Successfully loaded %d task(s) from %d job(s) in '%s' into %s",
             len(rows),
+            len(yaml_job_tasks),
             yaml_path,
             self.control_table,
         )

@@ -17,12 +17,18 @@
   - Removed try-finally blocks that were restoring patched methods
   - Cleaner, more maintainable code with better performance
   - SDK's native serialization properly handles all nested objects and enums
+- **Better error handling for invalid jobs**: Jobs with validation errors no longer block other valid jobs from being processed
+  - Invalid jobs are logged as warnings and skipped
+  - Valid jobs continue to be loaded into the control table
+  - Failed jobs are reported in the warning message with specific error details
+  - Example: If job 'A' has a dependency error, jobs 'B' and 'C' will still be processed successfully
 
 ### Technical Details
 - Imported `AzureAttributes`, `AzureAvailability`, `GcpAttributes`, `GcpAvailability`, and `EbsVolumeType` from `databricks.sdk.service.compute`
 - Updated cluster configuration logic in both job creation and update paths
 - Graceful fallback if cloud-specific attributes fail to parse
 - Verified SDK's native `as_dict()` handles all serialization correctly, eliminating need for custom monkey-patching
+- Per-job exception handling in `load_yaml()` to isolate failures and continue processing valid jobs
 
 ## [0.1.0] - Initial Release
 

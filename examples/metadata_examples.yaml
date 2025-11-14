@@ -18,7 +18,7 @@ jobs:
     queue:
       enabled: true
     continuous:
-      # pause_status: UNPAUSED  # testing default_pause_status
+      pause_status: PAUSED
       task_retry_mode: ON_FAILURE
     tasks:
       - task_key: "simple_quality_check"
@@ -117,7 +117,7 @@ jobs:
       project: "data_pipeline"
       environment: "production"
     job_clusters:
-      - job_cluster_key: "Job_cluster"
+      - job_cluster_key: "Job_cluster_aws"
         new_cluster:
           spark_version: "16.4.x-scala2.12"
           node_type_id: "rd-fleet.xlarge"
@@ -136,6 +136,39 @@ jobs:
           custom_tags:
             team: "data-engineering"
             cost-center: "engineering"
+      # - job_cluster_key: "Job_cluster_gcp"
+      #   new_cluster:
+      #     spark_version: "16.4.x-scala2.12"
+      #     num_workers: 4
+      #     node_type_id: "n2-highmem-4"
+      #     gcp_attributes:
+      #       first_on_demand: 1
+      #       availability: PREEMPTIBLE_GCP
+      #       zone_id: "HA"
+      #     spark_env_vars:
+      #       PYSPARK_PYTHON: /databricks/python3/bin/python3
+      #     enable_elastic_disk: false
+      #     data_security_mode: SINGLE_USER
+      #     runtime_engine: PHOTON
+      #     custom_tags:
+      #       team: "data-engineering"
+      #       cost-center: "engineering"
+      # - job_cluster_key: "Job_cluster_azure"
+      #   new_cluster:
+      #     spark_version: "16.4.x-scala2.12"
+      #     num_workers: 4
+      #     node_type_id: "Standard_D4ds_v5"
+      #     azure_attributes:
+      #       first_on_demand: 1
+      #       availability: SPOT_AZURE
+      #     spark_env_vars:
+      #       PYSPARK_PYTHON: /databricks/python3/bin/python3
+      #     enable_elastic_disk: false
+      #     data_security_mode: SINGLE_USER
+      #     runtime_engine: PHOTON
+      #     custom_tags:
+      #       team: "data-engineering"
+      #       cost-center: "engineering"
     notification_settings:
       email_notifications:
         on_start: ["team@example.com"]
@@ -154,15 +187,25 @@ jobs:
           catalog: "fe_ppark_demo"
           schema: "lakeflow_jobs_metadata"
       
-      - task_key: "task_with_job_cluster"
+      - task_key: "task_with_job_cluster_azure"
         task_type: "notebook"
         file_path: "/Workspace/Users/peter.park@databricks.com/ai-agent/02-agent-eval/02.1_agent_evaluation"
-        job_cluster_key: "Job_cluster"
+        job_cluster_key: "Job_cluster_azure"
+        depends_on: ["task_with_existing_cluster"]
+      - task_key: "task_with_job_cluster_aws"
+        task_type: "notebook"
+        file_path: "/Workspace/Users/peter.park@databricks.com/ai-agent/02-agent-eval/02.1_agent_evaluation"
+        job_cluster_key: "Job_cluster_aws"
+        depends_on: ["task_with_existing_cluster"]
+      - task_key: "task_with_job_cluster_gcp"
+        task_type: "notebook"
+        file_path: "/Workspace/Users/peter.park@databricks.com/ai-agent/02-agent-eval/02.1_agent_evaluation"
+        job_cluster_key: "Job_cluster_gcp"
         depends_on: ["task_with_existing_cluster"]
       
       - task_key: "task_with_run_if"
         task_type: "sql_query"
-        depends_on: ["task_with_existing_cluster", "task_with_job_cluster"]
+        depends_on: ["task_with_existing_cluster", "task_with_job_cluster_aws"]
         run_if: "AT_LEAST_ONE_SUCCESS"
         sql_query: "SELECT CURRENT_TIMESTAMP() as run_time"
         notification_settings:
