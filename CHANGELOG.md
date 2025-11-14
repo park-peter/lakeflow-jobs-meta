@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.1.1] - 2025-11-14
+
+### Added
+- **Multi-cloud support for job clusters**: Added support for `azure_attributes` and `gcp_attributes` in `job_clusters.new_cluster` configuration
+  - Azure: Supports `availability`, `first_on_demand`, `log_analytics_info`, `spot_bid_max_price`
+  - GCP: Supports `availability`, `boot_disk_size`, `first_on_demand`, `google_service_account`, `local_ssd_count`, `use_preemptible_executors`, `zone_id`
+  - Automatic enum conversion for `availability` fields using `AzureAvailability` and `GcpAvailability`
+  - Maintains backward compatibility with existing `aws_attributes` configurations
+- **Enhanced AWS attributes support**: Added support for `ebs_volume_type` with automatic `EbsVolumeType` enum conversion
+  - Now supports all AWS attributes: `availability`, `ebs_volume_count`, `ebs_volume_iops`, `ebs_volume_size`, `ebs_volume_throughput`, `ebs_volume_type`, `first_on_demand`, `instance_profile_arn`, `spot_bid_price_percent`, `zone_id`
+
+### Improved
+- **Removed unnecessary monkey-patching**: Simplified cluster configuration serialization by relying on SDK's native `as_dict()` method
+  - Removed custom `patched_cluster_spec_as_dict` and `patched_job_cluster_as_dict` functions
+  - Removed try-finally blocks that were restoring patched methods
+  - Cleaner, more maintainable code with better performance
+  - SDK's native serialization properly handles all nested objects and enums
+- **Better error handling for invalid jobs**: Jobs with validation errors no longer block other valid jobs from being processed
+  - Invalid jobs are logged as warnings and skipped
+  - Valid jobs continue to be loaded into the control table
+  - Failed jobs are reported in the warning message with specific error details
+  - Example: If job 'A' has a dependency error, jobs 'B' and 'C' will still be processed successfully
+
+### Technical Details
+- Imported `AzureAttributes`, `AzureAvailability`, `GcpAttributes`, `GcpAvailability`, and `EbsVolumeType` from `databricks.sdk.service.compute`
+- Updated cluster configuration logic in both job creation and update paths
+- Graceful fallback if cloud-specific attributes fail to parse
+- Verified SDK's native `as_dict()` handles all serialization correctly, eliminating need for custom monkey-patching
+- Per-job exception handling in `load_yaml()` to isolate failures and continue processing valid jobs
+
 ## [0.1.0] - Initial Release
 
 ### Overview

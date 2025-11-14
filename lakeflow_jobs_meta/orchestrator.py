@@ -18,6 +18,7 @@ from databricks.sdk.service.jobs import (
     TaskNotificationSettings,
     JobEmailNotifications,
     JobEditMode,
+    JobParameterDefinition,
 )
 
 try:
@@ -26,6 +27,11 @@ try:
         Environment as ComputeEnvironment,
         AwsAttributes,
         AwsAvailability,
+        EbsVolumeType,
+        AzureAttributes,
+        AzureAvailability,
+        GcpAttributes,
+        GcpAvailability,
         DataSecurityMode,
         RuntimeEngine,
     )
@@ -34,6 +40,11 @@ except ImportError:
     ComputeEnvironment = None
     AwsAttributes = None
     AwsAvailability = None
+    EbsVolumeType = None
+    AzureAttributes = None
+    AzureAvailability = None
+    GcpAttributes = None
+    GcpAvailability = None
     DataSecurityMode = None
     RuntimeEngine = None
 try:
@@ -853,12 +864,50 @@ class JobOrchestrator:
                                             availability_str = aws_attrs_dict_copy["availability"]
                                             if isinstance(availability_str, str):
                                                 aws_attrs_dict_copy["availability"] = AwsAvailability(availability_str)
+                                        if "ebs_volume_type" in aws_attrs_dict_copy and EbsVolumeType:
+                                            ebs_type_str = aws_attrs_dict_copy["ebs_volume_type"]
+                                            if isinstance(ebs_type_str, str):
+                                                aws_attrs_dict_copy["ebs_volume_type"] = EbsVolumeType(ebs_type_str)
                                         aws_attrs_obj = AwsAttributes(**aws_attrs_dict_copy)
                                     except Exception:
                                         pass
 
                                 if aws_attrs_obj:
                                     new_cluster_dict_copy["aws_attributes"] = aws_attrs_obj
+
+                                azure_attrs_dict = new_cluster_dict_copy.pop("azure_attributes", None)
+                                azure_attrs_obj = None
+                                if AzureAttributes and azure_attrs_dict:
+                                    try:
+                                        azure_attrs_dict_copy = azure_attrs_dict.copy()
+                                        if "availability" in azure_attrs_dict_copy and AzureAvailability:
+                                            availability_str = azure_attrs_dict_copy["availability"]
+                                            if isinstance(availability_str, str):
+                                                azure_attrs_dict_copy["availability"] = AzureAvailability(
+                                                    availability_str
+                                                )
+                                        azure_attrs_obj = AzureAttributes(**azure_attrs_dict_copy)
+                                    except Exception:
+                                        pass
+
+                                if azure_attrs_obj:
+                                    new_cluster_dict_copy["azure_attributes"] = azure_attrs_obj
+
+                                gcp_attrs_dict = new_cluster_dict_copy.pop("gcp_attributes", None)
+                                gcp_attrs_obj = None
+                                if GcpAttributes and gcp_attrs_dict:
+                                    try:
+                                        gcp_attrs_dict_copy = gcp_attrs_dict.copy()
+                                        if "availability" in gcp_attrs_dict_copy and GcpAvailability:
+                                            availability_str = gcp_attrs_dict_copy["availability"]
+                                            if isinstance(availability_str, str):
+                                                gcp_attrs_dict_copy["availability"] = GcpAvailability(availability_str)
+                                        gcp_attrs_obj = GcpAttributes(**gcp_attrs_dict_copy)
+                                    except Exception:
+                                        pass
+
+                                if gcp_attrs_obj:
+                                    new_cluster_dict_copy["gcp_attributes"] = gcp_attrs_obj
 
                                 if "data_security_mode" in new_cluster_dict_copy and DataSecurityMode:
                                     data_security_str = new_cluster_dict_copy["data_security_mode"]
@@ -928,7 +977,21 @@ class JobOrchestrator:
                     job_settings.notification_settings.email_notifications = email_notif_obj
 
             if job_settings_config.get("parameters"):
-                job_settings.parameters = job_settings_config["parameters"]
+                params_list = job_settings_config["parameters"]
+                if isinstance(params_list, list):
+                    job_params = []
+                    for param_dict in params_list:
+                        if isinstance(param_dict, dict):
+                            job_param = JobParameterDefinition(
+                                name=param_dict.get("name"),
+                                default=param_dict.get("default"),
+                            )
+                            job_params.append(job_param)
+                        else:
+                            job_params.append(param_dict)
+                    job_settings.parameters = job_params
+                else:
+                    job_settings.parameters = params_list
 
             self.workspace_client.jobs.reset(
                 job_id=stored_job_id,
@@ -1028,105 +1091,109 @@ class JobOrchestrator:
                         job_settings_kwargs["notification_settings"].email_notifications = email_notif_obj
 
                 if job_settings_config.get("parameters"):
-                    job_settings_kwargs["parameters"] = job_settings_config["parameters"]
-
-                original_cluster_spec_as_dict = ClusterSpec.as_dict if ClusterSpec else None
-                original_job_cluster_as_dict = JobCluster.as_dict
-
-                def patched_cluster_spec_as_dict(self):
-                    result = {}
-                    for key in dir(self):
-                        if key.startswith("_") or callable(getattr(self, key, None)):
-                            continue
-                        try:
-                            value = getattr(self, key, None)
-                            if value is None:
-                                continue
-                            if isinstance(value, dict):
-                                result[key] = value
-                            elif hasattr(value, "as_dict"):
-                                try:
-                                    result[key] = value.as_dict()
-                                except (AttributeError, TypeError):
-                                    result[key] = value
-                            elif hasattr(value, "value"):
-                                result[key] = value.value
+                    params_list = job_settings_config["parameters"]
+                    if isinstance(params_list, list):
+                        job_params = []
+                        for param_dict in params_list:
+                            if isinstance(param_dict, dict):
+                                job_param = JobParameterDefinition(
+                                    name=param_dict.get("name"),
+                                    default=param_dict.get("default"),
+                                )
+                                job_params.append(job_param)
                             else:
-                                result[key] = value
-                        except Exception:
-                            continue
-                    return result
+                                job_params.append(param_dict)
+                        job_settings_kwargs["parameters"] = job_params
+                    else:
+                        job_settings_kwargs["parameters"] = params_list
 
-                def patched_job_cluster_as_dict(self):
-                    result = {}
-                    if self.job_cluster_key:
-                        result["job_cluster_key"] = self.job_cluster_key
-                    if hasattr(self, "new_cluster") and self.new_cluster:
-                        if isinstance(self.new_cluster, dict):
-                            result["new_cluster"] = self.new_cluster
-                        elif hasattr(self.new_cluster, "as_dict"):
-                            try:
-                                result["new_cluster"] = self.new_cluster.as_dict()
-                            except (AttributeError, TypeError):
-                                result["new_cluster"] = self.new_cluster
-                        else:
-                            result["new_cluster"] = self.new_cluster
-                    return result
+                if "job_clusters" in job_settings_kwargs:
+                    job_clusters_list = []
+                    for cluster_dict in job_settings_kwargs["job_clusters"]:
+                        new_cluster_dict = cluster_dict.get("new_cluster", {})
 
-                if ClusterSpec:
-                    ClusterSpec.as_dict = patched_cluster_spec_as_dict
-                JobCluster.as_dict = patched_job_cluster_as_dict
-
-                try:
-                    if "job_clusters" in job_settings_kwargs:
-                        job_clusters_list = []
-                        for cluster_dict in job_settings_kwargs["job_clusters"]:
-                            new_cluster_dict = cluster_dict.get("new_cluster", {})
-
-                            if ClusterSpec and new_cluster_dict:
-                                aws_attrs_dict = new_cluster_dict.pop("aws_attributes", None)
-                                aws_attrs_obj = None
-                                if AwsAttributes and aws_attrs_dict:
-                                    try:
-                                        aws_attrs_dict_copy = aws_attrs_dict.copy()
-                                        if "availability" in aws_attrs_dict_copy and AwsAvailability:
-                                            availability_str = aws_attrs_dict_copy["availability"]
-                                            if isinstance(availability_str, str):
-                                                aws_attrs_dict_copy["availability"] = AwsAvailability(availability_str)
-                                        aws_attrs_obj = AwsAttributes(**aws_attrs_dict_copy)
-                                    except Exception:
-                                        new_cluster_dict["aws_attributes"] = aws_attrs_dict
-
+                        if ClusterSpec and new_cluster_dict:
+                            aws_attrs_dict = new_cluster_dict.pop("aws_attributes", None)
+                            aws_attrs_obj = None
+                            if AwsAttributes and aws_attrs_dict:
                                 try:
-                                    if aws_attrs_obj:
-                                        new_cluster_dict["aws_attributes"] = aws_attrs_obj
-
-                                    if "data_security_mode" in new_cluster_dict and DataSecurityMode:
-                                        data_security_str = new_cluster_dict["data_security_mode"]
-                                        if isinstance(data_security_str, str):
-                                            new_cluster_dict["data_security_mode"] = DataSecurityMode(
-                                                data_security_str
-                                            )
-
-                                    if "runtime_engine" in new_cluster_dict and RuntimeEngine:
-                                        runtime_str = new_cluster_dict["runtime_engine"]
-                                        if isinstance(runtime_str, str):
-                                            new_cluster_dict["runtime_engine"] = RuntimeEngine(runtime_str)
-
-                                    new_cluster_obj = ClusterSpec(**new_cluster_dict)
-                                    cluster_dict["new_cluster"] = new_cluster_obj
+                                    aws_attrs_dict_copy = aws_attrs_dict.copy()
+                                    if "availability" in aws_attrs_dict_copy and AwsAvailability:
+                                        availability_str = aws_attrs_dict_copy["availability"]
+                                        if isinstance(availability_str, str):
+                                            aws_attrs_dict_copy["availability"] = AwsAvailability(availability_str)
+                                    if "ebs_volume_type" in aws_attrs_dict_copy and EbsVolumeType:
+                                        ebs_type_str = aws_attrs_dict_copy["ebs_volume_type"]
+                                        if isinstance(ebs_type_str, str):
+                                            aws_attrs_dict_copy["ebs_volume_type"] = EbsVolumeType(ebs_type_str)
+                                    aws_attrs_obj = AwsAttributes(**aws_attrs_dict_copy)
                                 except Exception:
-                                    pass
+                                    new_cluster_dict["aws_attributes"] = aws_attrs_dict
 
+                            azure_attrs_dict = new_cluster_dict.pop("azure_attributes", None)
+                            azure_attrs_obj = None
+                            if AzureAttributes and azure_attrs_dict:
+                                try:
+                                    azure_attrs_dict_copy = azure_attrs_dict.copy()
+                                    if "availability" in azure_attrs_dict_copy and AzureAvailability:
+                                        availability_str = azure_attrs_dict_copy["availability"]
+                                        if isinstance(availability_str, str):
+                                            azure_attrs_dict_copy["availability"] = AzureAvailability(availability_str)
+                                    azure_attrs_obj = AzureAttributes(**azure_attrs_dict_copy)
+                                except Exception:
+                                    new_cluster_dict["azure_attributes"] = azure_attrs_dict
+
+                            gcp_attrs_dict = new_cluster_dict.pop("gcp_attributes", None)
+                            gcp_attrs_obj = None
+                            if GcpAttributes and gcp_attrs_dict:
+                                try:
+                                    gcp_attrs_dict_copy = gcp_attrs_dict.copy()
+                                    if "availability" in gcp_attrs_dict_copy and GcpAvailability:
+                                        availability_str = gcp_attrs_dict_copy["availability"]
+                                        if isinstance(availability_str, str):
+                                            gcp_attrs_dict_copy["availability"] = GcpAvailability(availability_str)
+                                    gcp_attrs_obj = GcpAttributes(**gcp_attrs_dict_copy)
+                                except Exception:
+                                    new_cluster_dict["gcp_attributes"] = gcp_attrs_dict
+
+                            try:
+                                if aws_attrs_obj:
+                                    new_cluster_dict["aws_attributes"] = aws_attrs_obj
+
+                                if azure_attrs_obj:
+                                    new_cluster_dict["azure_attributes"] = azure_attrs_obj
+
+                                if gcp_attrs_obj:
+                                    new_cluster_dict["gcp_attributes"] = gcp_attrs_obj
+
+                                if "data_security_mode" in new_cluster_dict and DataSecurityMode:
+                                    data_security_str = new_cluster_dict["data_security_mode"]
+                                    if isinstance(data_security_str, str):
+                                        new_cluster_dict["data_security_mode"] = DataSecurityMode(data_security_str)
+
+                                if "runtime_engine" in new_cluster_dict and RuntimeEngine:
+                                    runtime_str = new_cluster_dict["runtime_engine"]
+                                    if isinstance(runtime_str, str):
+                                        new_cluster_dict["runtime_engine"] = RuntimeEngine(runtime_str)
+
+                                new_cluster_obj = ClusterSpec(**new_cluster_dict)
+                                cluster_dict["new_cluster"] = new_cluster_obj
+
+                                job_cluster = JobCluster(**cluster_dict)
+                                job_clusters_list.append(job_cluster)
+                            except Exception as e:
+                                logger.warning(
+                                    f"Job '{job_name}': Failed to create job cluster "
+                                    f"'{cluster_dict.get('job_cluster_key')}': {e}"
+                                )
+                        else:
                             job_cluster = JobCluster(**cluster_dict)
                             job_clusters_list.append(job_cluster)
+
+                    if job_clusters_list:
                         job_settings_kwargs["job_clusters"] = job_clusters_list
 
-                    created_job = self.workspace_client.jobs.create(**job_settings_kwargs)
-                finally:
-                    if ClusterSpec and original_cluster_spec_as_dict:
-                        ClusterSpec.as_dict = original_cluster_spec_as_dict
-                    JobCluster.as_dict = original_job_cluster_as_dict
+                created_job = self.workspace_client.jobs.create(**job_settings_kwargs)
 
                 created_job_id = created_job.job_id
                 if not created_job_id:

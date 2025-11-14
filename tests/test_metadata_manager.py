@@ -183,8 +183,61 @@ class TestMetadataManager:
         
         try:
             manager = MetadataManager("test_table")
-            with pytest.raises(ValueError, match="must have 'task_type' field"):
-                manager.load_yaml(tmp_path)
+            tasks_loaded, job_names = manager.load_yaml(tmp_path)
+            assert tasks_loaded == 0
+            assert len(job_names) == 0
+        finally:
+            os.unlink(tmp_path)
+    
+    @patch('lakeflow_jobs_meta.metadata_manager._get_current_user')
+    @patch('lakeflow_jobs_meta.metadata_manager._get_spark')
+    def test_load_yaml_partial_failure(self, mock_get_spark, mock_get_current_user, mock_spark_session):
+        """Test that valid jobs are loaded even when one job has errors."""
+        mock_get_spark.return_value = mock_spark_session
+        mock_get_current_user.return_value = "test_user"
+        
+        config = {
+            'jobs': [
+                {
+                    'job_name': 'valid_job',
+                    'tasks': [{
+                        'task_key': 'task1',
+                        'task_type': 'notebook_task',
+                        'file_path': '/path/to/notebook'
+                    }]
+                },
+                {
+                    'job_name': 'invalid_job',
+                    'tasks': [{
+                        'task_key': 'task1',
+                        'task_type': 'notebook_task',
+                        'file_path': '/path/to/notebook',
+                        'depends_on': ['nonexistent_task']
+                    }]
+                },
+                {
+                    'job_name': 'another_valid_job',
+                    'tasks': [{
+                        'task_key': 'task1',
+                        'task_type': 'sql_query_task',
+                        'sql_query': 'SELECT 1'
+                    }]
+                }
+            ]
+        }
+        
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as tmp:
+            yaml.dump(config, tmp)
+            tmp_path = tmp.name
+        
+        try:
+            manager = MetadataManager("test_table")
+            tasks_loaded, job_names = manager.load_yaml(tmp_path)
+            assert tasks_loaded == 2
+            assert len(job_names) == 2
+            assert 'valid_job' in job_names
+            assert 'another_valid_job' in job_names
+            assert 'invalid_job' not in job_names
         finally:
             os.unlink(tmp_path)
     
